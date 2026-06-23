@@ -1,0 +1,23 @@
+# --- web service ---
+fastapi==0.138.0
+uvicorn[standard]==0.49.0
+pydantic==2.13.4
+pydantic-settings==2.7.0
+python-multipart==0.0.18
+itsdangerous==2.2.0          # signed session tokens (shared-password gate)
+
+# --- document processing (reuse host tooling where present; see processor/capabilities.py) ---
+pymupdf==1.27.2.3            # PDF text + raster (self-contained)
+pyyaml==6.0.1
+# The following bind to system libs on the VPS (poppler/tesseract/zbar/dmtx). Listed so the
+# image is reproducible; capability detection degrades gracefully if a backend is absent.
+pillow==11.0.0
+pdf2image==1.17.0
+pytesseract==0.3.13
+pyzbar==0.1.9
+pylibdmtx==0.1.10
+reportlab==4.2.5            # approval-bundle / discrepancy-report PDF generation
+
+# --- persistence (optional; falls back to a local JSON store when DATABASE_URL is unset) ---
+psycopg[binary]==3.2.3      # Supabase Postgres
+supabase==2.10.0            # Supabase Storage (private bucket) + auth (future swap)

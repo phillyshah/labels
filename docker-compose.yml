@@ -1,0 +1,34 @@
+# Maxx Label Approval — production compose, Traefik-fronted (usage-repo style).
+#
+# PREPARED, NOT DEPLOYED. Before first deploy, confirm against the live VPS:
+#   - the EXISTING shared Traefik network name (here: `traefik`),
+#   - the EXISTING certresolver + entrypoint names (here: `letsencrypt` / `websecure`),
+#   - the subdomain `labelcheck.90ten.life` and its DNS record,
+#   - the document-tooling inventory (docs/09 Q#12).
+# Match the conventions of a working 90ten.life service (e.g. rumors/usage) rather than guessing.
+
+services:
+  labelcheck:
+    build: .
+    image: maxx-labelcheck:latest
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - traefik
+    expose:
+      - "8000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.labelcheck.rule=Host(`labelcheck.90ten.life`)"
+      - "traefik.http.routers.labelcheck.entrypoints=websecure"
+      - "traefik.http.routers.labelcheck.tls.certresolver=letsencrypt"
+      - "traefik.http.services.labelcheck.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  traefik:
+    external: true   # the network already created by the existing Traefik stack on the VPS
