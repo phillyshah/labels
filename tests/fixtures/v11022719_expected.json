@@ -1,0 +1,68 @@
+{
+  "_comment": "Golden expected result for the V11022719 sample batch (sterile lot M26-179) under the UNCONFIGURED rule set (MXO-PP00001/00006 not supplied). The integration test asserts the processor reproduces this, ignoring processor_ms and submission_id. This encodes the manual review worked by hand in the project handoff.",
+  "submission_id": "<ignored-in-assert>",
+  "verdict": "APPROVE_WITH_FLAGS",
+  "rules_version": "2026-06-01.unconfigured",
+  "processor_ms": "<ignored-in-assert>",
+  "identity": {
+    "ref": "MTUUX400-K",
+    "lot": "V11022719",
+    "sterile_lot": "M26-179",
+    "description_label": "TIBIAL BASE PLATE / SIZE 4",
+    "qty_released": 38,
+    "mfg_date": "2026-03-01",
+    "exp_date": "2031-02-28"
+  },
+  "barcode": {
+    "decoded": true,
+    "symbology": "DataMatrix-GS1",
+    "ais": {
+      "01": "10881176701838",
+      "10": "V11022719",
+      "11": "260301",
+      "17": "310228",
+      "240": "MTUUX400K"
+    }
+  },
+  "checks": [
+    { "check_code": "A", "check_name": "Completeness, linkage & signatures", "result": "PASS" },
+    { "check_code": "B", "check_name": "Cross-document field consistency", "result": "PASS" },
+    {
+      "check_code": "C",
+      "check_name": "Barcode decode & reconciliation",
+      "result": "PASS",
+      "sub_results": [
+        { "ai": "10",  "result": "PASS" },
+        { "ai": "11",  "result": "PASS" },
+        { "ai": "17",  "result": "PASS" },
+        { "ai": "240", "result": "FLAG" },
+        { "ai": "01",  "result": "DEFERRED" }
+      ]
+    },
+    { "check_code": "D", "check_name": "Description normalization", "result": "DEFERRED" },
+    { "check_code": "E", "check_name": "IFU linkage", "result": "DEFERRED" },
+    {
+      "check_code": "F",
+      "check_name": "Static / template content",
+      "result": "DEFERRED",
+      "sub_results": [
+        { "item": "manufacturer_address", "result": "PASS" },
+        { "item": "ce_notified_body", "result": "DEFERRED" },
+        { "item": "ec_rep", "result": "DEFERRED" },
+        { "item": "symbols", "result": "DEFERRED" },
+        { "item": "product_family_branding", "result": "DEFERRED" },
+        { "item": "label_revision", "result": "DEFERRED" }
+      ]
+    },
+    {
+      "check_code": "G",
+      "check_name": "Workflow integrity",
+      "result": "FLAG",
+      "sub_results": [
+        { "item": "barcode_scanned_box", "result": "FLAG" },
+        { "item": "deviation_reference", "result": "FLAG" },
+        { "item": "qty_reconciliation", "result": "FLAG" }
+      ]
+    }
+  ]
+}
