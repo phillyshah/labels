@@ -119,6 +119,16 @@ export type DocField =
   | (typeof REQUIRED_DOCS)[number]
   | (typeof OPTIONAL_DOCS)[number];
 
+// Stable data-testid for each upload input (consumed by the Playwright e2e suite).
+export const UPLOAD_TESTID: Record<DocField, string> = {
+  label_form: "upload-label",
+  batch_coc: "upload-batch-coc",
+  sterile_coc: "upload-sterile-coc",
+  sterile_lot_record: "upload-sterile-lot-record",
+  doc_release_verification: "upload-doc-release-verification",
+  sterile_product_release_verification: "upload-sterile-product-release-verification",
+};
+
 export const DOC_LABELS: Record<DocField, string> = {
   label_form: "Label form (Reference Label 1st Copy)",
   batch_coc: "Batch CoC",
