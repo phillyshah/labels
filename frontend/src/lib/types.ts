@@ -34,6 +34,16 @@ export interface Identity {
   qty_released: string | null;
   mfg_date: string | null;
   exp_date: string | null;
+  batch_certificate_no?: string | null;
+}
+
+// One row of the Section-1 source-of-truth table (per-document columns).
+export interface SourceRow {
+  field: string;
+  label: string;
+  batch_coc: string;
+  sterile_coc: string;
+  sterile_lot_record: string;
 }
 
 export interface Barcode {
@@ -49,6 +59,7 @@ export interface SubmissionResult {
   processor_ms: number;
   identity: Identity;
   barcode: Barcode;
+  source_of_truth?: SourceRow[];
   checks: Check[];
 }
 

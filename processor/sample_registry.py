@@ -48,11 +48,18 @@ _LABEL_V11022719 = {
     "ref": "MTUUX400-K",
     "lot": "V11022719",
     "qty": 38,
+    "per_unit_qty": 1,
     "description": "TIBIAL BASE PLATE / SIZE 4",
     "mfg_date": "2026-03-01",
     "exp_date": "2031-02-28",
+    "sterilization_method": "STERILE EO (symbol)",
+    "ce_mark": "CE 2460",
     "manufacturer_address": ("Maxx Orthopedics, 2460 General Armistead Ave, Suite 100, "
                              "Norristown, PA 19403, U.S.A."),
+    "ec_rep": ("AIWO Technology Consulting GmbH, Breite Straße 3, 40213 Düsseldorf, Germany"),
+    "product_family": "FREEDOM Total Knee System",
+    "rev_marking": "Rev.03",
+    "ifu_on_label": None,                 # not legible on the label image
     "barcode_scanned_box": "No",
     "signatures": {
         "production": {"name": "K.G.", "date": "2026-03-30"},
@@ -76,6 +83,9 @@ _SLR_M26_179 = {
     "sterile_lot": "M26-179",
     "description": "Tibial Base Plate, Size 4",
     "released_qty": 38,
+    "coc_qty": 38,
+    "sterilization_method": "EO confirmed (Form 1023-1)",
+    "sterilizer": "ISL, Chamber C, BI Lot BAD-026",
     "deviation_comment": "Released under deviation 25.17",
 }
 

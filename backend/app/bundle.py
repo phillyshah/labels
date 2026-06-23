@@ -1,64 +1,138 @@
-"""Approval-bundle / discrepancy-report PDF generation (the DHR artifact, docs/06).
+"""Approval-record / discrepancy-report PDF generation (the DHR artifact).
 
-Minimal but real: renders the verdict, identity, full scorecard, acknowledged flags, and the
-signer of record. Styling is intentionally plain for V1 (mirrors WI052-F1 content, not its exact
-layout). Degrades to None if reportlab is unavailable.
+Renders the generated record in the worked-example output shape:
+  - header (identity + batch CoC no. + generated date stamp)
+  - Section 1: source-of-truth values table (per-document columns)
+  - Section 2/3: summary scorecard (Check / Result / Reason)
+  - acknowledged flags + the DEFERRED "not machine-verified" list
+  - Quality Approval block (signer of record + signature date stamp)
+
+Degrades to None if reportlab is unavailable (it's in backend/requirements.txt).
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
+
+RESULT_COLORS = {
+    "PASS": "#16a34a", "FAIL": "#dc2626", "FLAG": "#d97706", "DEFERRED": "#6b7280",
+}
+
+
+def _stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
 def generate_bundle(out_path: str, result: Dict, decision: str, signer_name: str,
                     acknowledged_flags: Optional[List] = None) -> Optional[str]:
     try:
+        from reportlab.lib import colors
         from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import inch
-        from reportlab.pdfgen import canvas
+        from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
+                                        Paragraph, Spacer)
     except Exception:
         return None
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    c = canvas.Canvas(out_path, pagesize=letter)
-    width, height = letter
-    y = height - inch
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontSize=15, spaceAfter=4)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontSize=11, spaceBefore=10, spaceAfter=4)
+    small = ParagraphStyle("small", parent=styles["Normal"], fontSize=7.5, leading=9)
+    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=8.5, leading=11)
 
     ident = result.get("identity", {})
-    title = "LABEL APPROVAL RECORD" if decision == "RELEASED" else "LABEL DISCREPANCY REPORT"
+    generated = _stamp()
+    story: List = []
 
-    c.setFont("Helvetica-Bold", 16); c.drawString(inch, y, title); y -= 0.4 * inch
-    c.setFont("Helvetica", 10)
-    c.drawString(inch, y, f"Verdict: {result.get('verdict')}    Decision: {decision}"); y -= 0.25 * inch
-    c.drawString(inch, y, f"REF {ident.get('ref')}  ·  LOT {ident.get('lot')}  ·  "
-                          f"Sterile lot {ident.get('sterile_lot')}"); y -= 0.25 * inch
-    c.drawString(inch, y, f"Qty released {ident.get('qty_released')}  ·  "
-                          f"Mfg {ident.get('mfg_date')}  ·  Exp {ident.get('exp_date')}")
-    y -= 0.4 * inch
+    title = ("Label Approval Record (WI052-F1)" if decision == "RELEASED"
+             else "Label Discrepancy Report (WI052 §3.9)")
+    story.append(Paragraph(title, h1))
+    story.append(Paragraph(
+        f"Verdict <b>{result.get('verdict','')}</b> &nbsp;•&nbsp; Decision <b>{decision}</b>"
+        f" &nbsp;•&nbsp; Generated {generated}", body))
+    story.append(Paragraph(
+        f"REF <b>{ident.get('ref','')}</b> &nbsp;•&nbsp; LOT <b>{ident.get('lot','')}</b>"
+        f" &nbsp;•&nbsp; Sterile lot <b>{ident.get('sterile_lot','')}</b>"
+        f" &nbsp;•&nbsp; Batch CoC #{ident.get('batch_certificate_no','')}", body))
+    story.append(Paragraph(
+        f"Qty released {ident.get('qty_released','')} &nbsp;•&nbsp; "
+        f"Mfg {ident.get('mfg_date','')} &nbsp;•&nbsp; Exp {ident.get('exp_date','')} "
+        f"&nbsp;•&nbsp; Rules {result.get('rules_version','')}", body))
 
-    c.setFont("Helvetica-Bold", 12); c.drawString(inch, y, "Scorecard"); y -= 0.28 * inch
-    c.setFont("Helvetica", 9)
+    # --- Section 1: source-of-truth table ---
+    sot = result.get("source_of_truth") or []
+    if sot:
+        story.append(Paragraph("Section 1 — Source-of-truth values", h2))
+        header = ["Field", "Label", "Batch CoC", "Sterile CoC", "Sterile Lot Record"]
+        data = [[Paragraph(f"<b>{c}</b>", small) for c in header]]
+        for r in sot:
+            data.append([
+                Paragraph(r.get("field", ""), small),
+                Paragraph(r.get("label", ""), small),
+                Paragraph(r.get("batch_coc", ""), small),
+                Paragraph(r.get("sterile_coc", ""), small),
+                Paragraph(r.get("sterile_lot_record", ""), small),
+            ])
+        t = Table(data, colWidths=[1.25 * inch, 1.7 * inch, 1.2 * inch, 1.1 * inch, 1.25 * inch])
+        t.setStyle(TableStyle([
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d1d5db")),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fafafa")]),
+        ]))
+        story.append(t)
+
+    # --- Section 3: scorecard ---
+    story.append(Paragraph("Section 3 — Summary scorecard", h2))
+    sc = [[Paragraph("<b>Check</b>", small), Paragraph("<b>Name</b>", small),
+           Paragraph("<b>Result</b>", small), Paragraph("<b>Reason</b>", small)]]
     for chk in result.get("checks", []):
-        c.drawString(inch, y, f"{chk['check_code']}  {chk['check_name']}: {chk['result']}")
-        y -= 0.2 * inch
-        reason = (chk.get("reason") or "")[:110]
-        if reason:
-            c.setFont("Helvetica-Oblique", 8); c.drawString(1.3 * inch, y, reason)
-            c.setFont("Helvetica", 9); y -= 0.2 * inch
-        if y < 1.5 * inch:
-            c.showPage(); y = height - inch; c.setFont("Helvetica", 9)
+        color = RESULT_COLORS.get(chk.get("result", ""), "#111827")
+        sc.append([
+            Paragraph(chk.get("check_code", ""), small),
+            Paragraph(chk.get("check_name", ""), small),
+            Paragraph(f'<b><font color="{color}">{chk.get("result","")}</font></b>', small),
+            Paragraph(chk.get("reason", ""), small),
+        ])
+    st = Table(sc, colWidths=[0.5 * inch, 1.8 * inch, 0.9 * inch, 3.3 * inch])
+    st.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d1d5db")),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    story.append(st)
 
+    # --- acknowledged flags ---
     if acknowledged_flags:
-        y -= 0.2 * inch; c.setFont("Helvetica-Bold", 11)
-        c.drawString(inch, y, "Acknowledged flags"); y -= 0.24 * inch; c.setFont("Helvetica", 9)
+        story.append(Paragraph("Acknowledged flags", h2))
         for f in acknowledged_flags:
-            c.drawString(1.2 * inch, y, f"• {f.get('item', f)}: {f.get('note', '')}"[:110])
-            y -= 0.18 * inch
+            item = f.get("item", f) if isinstance(f, dict) else f
+            note = f.get("note", "") if isinstance(f, dict) else ""
+            story.append(Paragraph(f"• <b>{item}</b>: {note}", body))
 
-    y -= 0.3 * inch; c.setFont("Helvetica-Bold", 11)
-    c.drawString(inch, y, "Quality Approval (WI052 3.7)"); y -= 0.24 * inch
-    c.setFont("Helvetica", 10)
-    c.drawString(inch, y, f"Signed by: {signer_name}")
-    c.save()
+    # --- DEFERRED (not machine-verified) ---
+    deferred = [c for c in result.get("checks", []) if c.get("result") == "DEFERRED"]
+    if deferred:
+        story.append(Paragraph("Not machine-verified (DEFERRED) — manual responsibility", h2))
+        for c in deferred:
+            story.append(Paragraph(
+                f"• <b>{c.get('check_code')}</b> {c.get('check_name')}: {c.get('reason','')}",
+                body))
+
+    # --- Quality Approval block ---
+    story.append(Spacer(1, 0.25 * inch))
+    story.append(Paragraph("Quality Approval (WI052 §3.7)", h2))
+    story.append(Paragraph(
+        f"Signed by: <b>{signer_name}</b> &nbsp;•&nbsp; Date: <b>{generated}</b>", body))
+    story.append(Paragraph(
+        f"Processed in {result.get('processor_ms','')} ms • "
+        f"Submission {result.get('submission_id','')}", small))
+
+    SimpleDocTemplate(out_path, pagesize=letter,
+                      topMargin=0.6 * inch, bottomMargin=0.6 * inch,
+                      leftMargin=0.6 * inch, rightMargin=0.6 * inch).build(story)
     return out_path

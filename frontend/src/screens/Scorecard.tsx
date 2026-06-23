@@ -14,6 +14,7 @@ import {
 } from "../lib/api";
 import { collectDeferred, collectFlags } from "../lib/scorecard";
 import { ScorecardTable } from "../components/ScorecardTable";
+import { SourceOfTruth } from "../components/SourceOfTruth";
 
 const BANNER: Record<
   Verdict,
@@ -162,6 +163,10 @@ function ScorecardBody({ result }: { result: SubmissionResult }) {
         <span>Rules {result.rules_version}</span>
         <span>Processed in {result.processor_ms} ms</span>
       </div>
+
+      {result.source_of_truth && (
+        <SourceOfTruth rows={result.source_of_truth} />
+      )}
 
       <ScorecardTable checks={result.checks} />
 

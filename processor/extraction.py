@@ -167,7 +167,11 @@ def extract_fields(documents: Dict[str, str]) -> Dict:
             "qty_released": normalize_qty(released),
             "mfg_date": parse_date_to_iso(sterile.get("mfg_date") or label.get("mfg_date")),
             "exp_date": parse_date_to_iso(sterile.get("exp_date") or label.get("exp_date")),
+            "batch_certificate_no": batch.get("certificate_no"),
         },
+        # Raw per-document parses, kept so the report can render the Section-1
+        # "source-of-truth values" table (one column per document). Not surfaced in checks.
+        "_docs": {"label": label, "batch": batch, "sterile": sterile, "slr": slr},
     }
     return fields
 
@@ -179,6 +183,9 @@ def _parse_batch_coc(text: str) -> Dict:
     out: Dict = {}
     if not text:
         return out
+    m = re.search(r"Certificate No\.?:?\s*\n\s*(\d+)", text)
+    if m:
+        out["certificate_no"] = m.group(1)
     m = re.search(r"Customer Part\s*\n?\s*number\s*\n\s*([A-Z0-9\-]+)", text)
     if m:
         out["ref"] = m.group(1)
@@ -191,6 +198,9 @@ def _parse_batch_coc(text: str) -> Dict:
     m = re.search(r"Description\s*\n\s*([^\n]+)", text)
     if m:
         out["description"] = m.group(1).strip()
+    m = re.search(r"Drawing Revision\s*\n\s*([A-Z0-9]+)", text)
+    if m:
+        out["drawing_revision"] = m.group(1)
     m = re.search(r"Address\s*\n\s*([^\n]+(?:\n[^\n]+)?)", text)
     if m:
         out["shipped_to_address"] = re.sub(r"\s+", " ", m.group(1)).strip()

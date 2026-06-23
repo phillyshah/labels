@@ -16,6 +16,7 @@ from . import capabilities
 from .barcode import decode_label_barcodes
 from .checks import run_checks
 from .extraction import extract_fields, normalize_lot
+from .report import build_source_of_truth
 
 REQUIRED_DOCS = ("label_form", "batch_coc", "sterile_coc", "sterile_lot_record")
 
@@ -62,7 +63,7 @@ def process_submission(documents: Dict[str, str], rules: Dict,
     # Stage 4 -- checks engine.
     engine = run_checks(fields, barcode, rules)
 
-    # Stage 5 -- assemble the API-shaped result (docs/07).
+    # Stage 5 -- assemble the API-shaped result (docs/07) + the Section-1 source-of-truth table.
     identity = fields.get("identity", {})
     result = {
         "submission_id": submission_id,
@@ -71,6 +72,7 @@ def process_submission(documents: Dict[str, str], rules: Dict,
         "processor_ms": int((time.time() - t0) * 1000),
         "identity": identity,
         "barcode": barcode,
+        "source_of_truth": build_source_of_truth(fields, barcode),
         "checks": engine["checks"],
     }
     return result
