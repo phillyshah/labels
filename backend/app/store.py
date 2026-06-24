@@ -134,6 +134,10 @@ class LocalStore:
         })
         self._write(data)
 
+    def healthcheck(self) -> Optional[str]:
+        """Return None if the store is usable, else a short error string. Local store is always ok."""
+        return None
+
 
 class PostgresStore(LocalStore):
     """Supabase Postgres store. Reuses LocalStore for on-disk file storage in V1 (Supabase
@@ -147,6 +151,16 @@ class PostgresStore(LocalStore):
         super().__init__()
         import psycopg  # lazy: only needed when a database is configured
         self._connect = lambda: psycopg.connect(settings().database_url, autocommit=True)
+
+    def healthcheck(self) -> Optional[str]:
+        """Probe the actual Postgres connection so a bad DATABASE_URL surfaces at /healthz
+        rather than as a 500 on the first upload."""
+        try:
+            with self._connect() as con:
+                con.execute("select 1")
+            return None
+        except Exception as e:  # connection refused / auth / bad host etc.
+            return f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"
 
     def create_submission(self, identity: Optional[Dict] = None) -> str:
         sid = _new_id()
@@ -179,28 +193,85 @@ class PostgresStore(LocalStore):
 
     def create_approval(self, submission_id, decision, signed_by_name,
                         acknowledged_flags=None, bundle_path=None) -> Dict:
+        import psycopg
         approval_id = _new_id()
-        with self._connect() as con:
-            con.execute(
-                "insert into approvals (id, submission_id, decision, signed_by_name, "
-                "acknowledged_flags, bundle_path) values (%s,%s,%s,%s,%s,%s)",
-                (approval_id, submission_id, decision, signed_by_name,
-                 json.dumps(acknowledged_flags or []), bundle_path),
-            )
-            con.execute(
-                "update submissions set status=%s where id=%s",
-                ("released" if decision == "RELEASED" else "rejected", submission_id),
-            )
+        try:
+            with self._connect() as con:
+                con.execute(
+                    "insert into approvals (id, submission_id, decision, signed_by_name, "
+                    "acknowledged_flags, bundle_path) values (%s,%s,%s,%s,%s,%s)",
+                    (approval_id, submission_id, decision, signed_by_name,
+                     json.dumps(acknowledged_flags or []), bundle_path),
+                )
+                con.execute(
+                    "update submissions set status=%s where id=%s",
+                    ("released" if decision == "RELEASED" else "rejected", submission_id),
+                )
+        except psycopg.errors.UniqueViolation:
+            # An approval already exists for this submission — the sign is immutable.
+            raise ValueError("approval already exists for this submission (immutable)")
         return {"id": approval_id, "submission_id": submission_id, "decision": decision,
                 "signed_by_name": signed_by_name, "signed_at": _now()}
 
     def append_audit(self, action, submission_id=None, actor=None, detail=None) -> None:
         with self._connect() as con:
             con.execute(
-                "insert into audit_log (submission_id, actor, action, detail) "
-                "values (%s,%s,%s,%s)",
-                (submission_id, actor, action, json.dumps(detail or {})),
+                "insert into audit_log (submission_id, action, detail) "
+                "values (%s,%s,%s)",
+                (submission_id, action, json.dumps((detail or {}) | (
+                    {"actor": actor} if actor else {}))),
             )
+
+    # --- reads (must hit Postgres too; the parent's JSON-file reads never see PG rows) ---
+    def get_submission(self, submission_id: str) -> Optional[Dict]:
+        with self._connect() as con:
+            cur = con.execute(
+                "select id, created_at, status, verdict, rules_version, processor_ms, "
+                "ref, lot, sterile_lot, error_detail from submissions where id=%s",
+                (submission_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            cols = [d.name for d in cur.description]
+            sub = dict(zip(cols, row))
+            cur = con.execute(
+                "select check_code, check_name, result, reason, evidence "
+                "from check_results where submission_id=%s order by check_code",
+                (submission_id,))
+            ccols = [d.name for d in cur.description]
+            checks = [dict(zip(ccols, r)) for r in cur.fetchall()]
+        # Rebuild the API-shaped result the scorecard view expects.
+        if checks:
+            sub["_result"] = {
+                "submission_id": submission_id,
+                "verdict": sub.get("verdict"),
+                "rules_version": sub.get("rules_version"),
+                "processor_ms": sub.get("processor_ms"),
+                "identity": {"ref": sub.get("ref"), "lot": sub.get("lot"),
+                             "sterile_lot": sub.get("sterile_lot")},
+                "checks": checks,
+            }
+        return sub
+
+    def list_submissions(self) -> List[Dict]:
+        with self._connect() as con:
+            cur = con.execute(
+                "select id, created_at, status, verdict, ref, lot, sterile_lot "
+                "from submissions order by created_at desc")
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    def get_approval(self, submission_id: str) -> Optional[Dict]:
+        with self._connect() as con:
+            cur = con.execute(
+                "select id, submission_id, decision, signed_by_name, signed_at, "
+                "acknowledged_flags, bundle_path from approvals where submission_id=%s",
+                (submission_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            cols = [d.name for d in cur.description]
+            return dict(zip(cols, row))
 
 
 _store: Optional[LocalStore] = None

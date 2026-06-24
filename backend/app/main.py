@@ -42,12 +42,17 @@ OPTIONAL_DOCS = ("doc_release_verification", "sterile_product_release_verificati
 def healthz():
     caps = capabilities.probe()
     missing = capabilities.missing_required()
-    body = {"status": "ok" if not missing else "degraded",
+    db_error = get_store().healthcheck()  # actually probes Postgres when configured
+    degraded = bool(missing) or bool(db_error)
+    body = {"status": "ok" if not degraded else "degraded",
             "capabilities": caps, "rules_version": rules().get("rules_version"),
             "store": "postgres" if settings().database_url else "local"}
     if missing:
-        return JSONResponse(body | {"missing_required": missing},
-                            status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        body["missing_required"] = missing
+    if db_error:
+        body["db_error"] = db_error
+    if degraded:
+        return JSONResponse(body, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     return body
 
 
@@ -95,23 +100,31 @@ async def api_create_submission(
     sterile_product_release_verification: Optional[UploadFile] = File(None),
 ):
     store = get_store()
-    sid = store.create_submission()
-    store.append_audit("UPLOAD", submission_id=sid)
-
     uploads = {
         "label_form": label_form, "batch_coc": batch_coc,
         "sterile_coc": sterile_coc, "sterile_lot_record": sterile_lot_record,
         "doc_release_verification": doc_release_verification,
         "sterile_product_release_verification": sterile_product_release_verification,
     }
-    paths = {}
-    for doc_type, upload in uploads.items():
-        if upload is None:
-            continue
-        content = await upload.read()
-        paths[doc_type] = store.save_input_file(sid, doc_type, upload.filename or "f.pdf", content)
+    try:
+        sid = store.create_submission()
+        store.append_audit("UPLOAD", submission_id=sid)
 
-    store.append_audit("RUN", submission_id=sid)
+        paths = {}
+        for doc_type, upload in uploads.items():
+            if upload is None:
+                continue
+            content = await upload.read()
+            paths[doc_type] = store.save_input_file(
+                sid, doc_type, upload.filename or "f.pdf", content)
+
+        store.append_audit("RUN", submission_id=sid)
+    except Exception as e:  # persistence/storage failure (e.g. bad DATABASE_URL)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"storage unavailable — check the database connection ({type(e).__name__})",
+        )
+
     result = process_submission(paths, rules(), submission_id=sid)
     if result.get("error"):
         store.set_error(sid, result)
