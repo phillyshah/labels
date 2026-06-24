@@ -21,3 +21,6 @@ reportlab==4.2.5            # approval-bundle / discrepancy-report PDF generatio
 # --- persistence (optional; falls back to a local JSON store when DATABASE_URL is unset) ---
 psycopg[binary]==3.2.3      # Supabase Postgres
 supabase==2.10.0            # Supabase Storage (private bucket) + auth (future swap)
+
+# --- training: optional AI-suggested rule edits (no-op unless ANTHROPIC_API_KEY is set) ---
+anthropic==0.69.0           # drafts rules.yaml/heuristic changes from the feedback corpus

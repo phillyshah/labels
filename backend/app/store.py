@@ -29,6 +29,20 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
+def _disagreement_row(f: Dict, ref, lot, result: Dict) -> Dict:
+    """One disagreement enriched with the tool's output for the rated target."""
+    target = f.get("target")
+    if target == "verdict":
+        tool_result, tool_reason = result.get("verdict"), ""
+    else:
+        chk = next((c for c in result.get("checks", [])
+                    if c.get("check_code") == target), {})
+        tool_result, tool_reason = chk.get("result"), chk.get("reason", "")
+    return {"ref": ref, "lot": lot, "target": target,
+            "tool_result": tool_result, "tool_reason": tool_reason,
+            "rating": f.get("rating"), "expected": f.get("expected"), "note": f.get("note")}
+
+
 def _summarize_metrics(feedback: List[Dict], batches: int) -> Dict:
     """Accuracy dashboard from the feedback corpus. correct=1, partial=0.5, wrong=0."""
     weight = {"correct": 1.0, "partial": 0.5, "wrong": 0.0}
@@ -166,6 +180,20 @@ class LocalStore:
         fb = data.get("feedback", [])
         training_subs = [s for s in data["submissions"].values() if s.get("is_training")]
         return _summarize_metrics(fb, len(training_subs))
+
+    def disagreement_corpus(self) -> List[Dict]:
+        """Feedback rows where the reviewer disagreed (rating != correct), enriched with the
+        tool's own output for that target — the input the AI-assist step reasons over."""
+        data = self._read()
+        subs = data["submissions"]
+        out = []
+        for f in data.get("feedback", []):
+            if f.get("rating") == "correct":
+                continue
+            sub = subs.get(f.get("submission_id")) or {}
+            out.append(_disagreement_row(f, sub.get("ref"), sub.get("lot"),
+                                         sub.get("_result") or {}))
+        return out
 
     # --- approvals + audit ---
     def create_approval(self, submission_id: str, decision: str, signed_by_name: str,
@@ -353,6 +381,19 @@ class PostgresStore(LocalStore):
             cur = con.execute("select count(*) from submissions where coalesce(is_training,false)=true")
             batches = cur.fetchone()[0]
         return _summarize_metrics(fb, batches)
+
+    def disagreement_corpus(self) -> List[Dict]:
+        with self._connect() as con:
+            cur = con.execute(
+                "select f.target, f.rating, f.expected, f.note, s.ref, s.lot, s.result_json "
+                "from feedback f join submissions s on s.id = f.submission_id "
+                "where f.rating <> 'correct' order by f.created_at")
+            rows = cur.fetchall()
+        out = []
+        for target, rating, expected, note, ref, lot, result_json in rows:
+            f = {"target": target, "rating": rating, "expected": expected, "note": note}
+            out.append(_disagreement_row(f, ref, lot, result_json or {}))
+        return out
 
     def get_approval(self, submission_id: str) -> Optional[Dict]:
         with self._connect() as con:

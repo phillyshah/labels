@@ -208,6 +208,15 @@ def api_get_feedback(submission_id: str, _: dict = Depends(auth.current_reviewer
     return get_store().get_feedback(submission_id)
 
 
+@app.post("/api/training/suggest")
+def api_training_suggest(_: dict = Depends(auth.current_reviewer)):
+    """Draft reviewable rule/heuristic changes from the feedback corpus (Claude API).
+    Returns {available, message, suggestions[]} and never applies anything automatically."""
+    from . import assist
+    corpus = get_store().disagreement_corpus()
+    return assist.propose_rule_changes(corpus, rules())
+
+
 @app.get("/api/submissions")
 def api_list(_: dict = Depends(auth.current_reviewer)):
     rows = get_store().list_submissions()

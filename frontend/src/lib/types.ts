@@ -143,6 +143,20 @@ export interface TrainingMetrics {
   by_target: Record<string, RatingBucket>;
 }
 
+export interface RuleSuggestion {
+  title: string;
+  target: string;
+  rationale: string;
+  proposed_change: string;
+  confidence: string;
+}
+
+export interface SuggestResponse {
+  available: boolean;
+  message: string;
+  suggestions: RuleSuggestion[];
+}
+
 // The upload form's six document slots.
 export const REQUIRED_DOCS = [
   "label_form",

@@ -11,6 +11,7 @@ import type {
   SubmissionError,
   SubmissionListItem,
   SubmissionResult,
+  SuggestResponse,
   TrainingMetrics,
 } from "./types";
 
@@ -239,6 +240,12 @@ export function submitFeedback(
       body: JSON.stringify(body),
     },
   );
+}
+
+// Draft reviewable rule changes from the accumulated feedback (Claude API on the server).
+// Never applies anything — returns suggestions for a human to apply.
+export function suggestRuleChanges(): Promise<SuggestResponse> {
+  return request<SuggestResponse>("/api/training/suggest", { method: "POST" });
 }
 
 // --- Health -----------------------------------------------------------------

@@ -81,3 +81,20 @@ def test_invalid_rating_rejected(client):
     bad = client.post(f"/api/submissions/{sid}/feedback", headers=h,
                       json={"items": [{"target": "A", "rating": "great"}]})
     assert bad.status_code == 400
+
+
+@pytest.mark.integration
+def test_suggest_without_api_key_is_graceful(client, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    h = _auth(client)
+    sid = client.post("/api/training/submissions", headers=h,
+                      files=_sample_files()).json()["submission_id"]
+    client.post(f"/api/submissions/{sid}/feedback", headers=h, json={
+        "items": [{"target": "D", "rating": "wrong", "expected": "PASS",
+                   "note": "loosen description match"}]})
+    res = client.post("/api/training/suggest", headers=h)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["available"] is False  # no key configured
+    assert "ANTHROPIC_API_KEY" in body["message"]
+    assert body["suggestions"] == []

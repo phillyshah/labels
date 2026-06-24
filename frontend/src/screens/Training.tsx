@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import {
   OPTIONAL_DOCS,
   REQUIRED_DOCS,
+  type CheckResult,
   type DocField,
   type FeedbackItem,
   type Rating,
   type SubmissionError,
   type SubmissionResult,
+  type SuggestResponse,
   type TrainingMetrics,
   type Verdict,
 } from "../lib/types";
@@ -14,6 +16,7 @@ import {
   ApiError,
   createTrainingSubmission,
   submitFeedback,
+  suggestRuleChanges,
   trainingMetrics,
 } from "../lib/api";
 import { FileRow } from "../components/FileRow";
@@ -21,6 +24,7 @@ import { FileRow } from "../components/FileRow";
 type FileMap = Partial<Record<DocField, File>>;
 const ALL_DOCS: DocField[] = [...REQUIRED_DOCS, ...OPTIONAL_DOCS];
 const VERDICTS: Verdict[] = ["APPROVE", "APPROVE_WITH_FLAGS", "REJECT"];
+const CHECK_RESULTS: CheckResult[] = ["PASS", "FAIL", "FLAG", "DEFERRED"];
 
 const RESULT_COLOR: Record<string, string> = {
   PASS: "text-green-700",
@@ -138,6 +142,14 @@ export function Training() {
   const [expectedVerdict, setExpectedVerdict] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
+  // ground-truth mode: provide expected results and auto-score against them
+  const [expectedMode, setExpectedMode] = useState(false);
+  const [expectedChecks, setExpectedChecks] = useState<Record<string, string>>({});
+
+  // AI rule suggestions
+  const [suggest, setSuggest] = useState<SuggestResponse | null>(null);
+  const [suggesting, setSuggesting] = useState(false);
+
   const requiredMet = REQUIRED_DOCS.every((d) => !!files[d]);
 
   function loadMetrics() {
@@ -174,6 +186,8 @@ export function Training() {
         setRatings({});
         setNotes({});
         setExpectedVerdict("");
+        setExpectedChecks({});
+        setExpectedMode(false);
         setPhase("review");
       } else {
         const e = res.error as SubmissionError;
@@ -186,15 +200,29 @@ export function Training() {
     }
   }
 
+  // Auto-score the tool's output against expected results the reviewer supplied.
+  function autoScore() {
+    if (!result) return;
+    const r: Record<string, Rating> = { ...ratings };
+    for (const chk of result.checks) {
+      const exp = expectedChecks[chk.check_code];
+      if (exp) r[chk.check_code] = exp === chk.result ? "correct" : "wrong";
+    }
+    if (expectedVerdict)
+      r["verdict"] = expectedVerdict === result.verdict ? "correct" : "wrong";
+    setRatings(r);
+  }
+
   async function save() {
     if (!result || saving) return;
     const items: FeedbackItem[] = [];
     for (const chk of result.checks) {
-      const r = ratings[chk.check_code];
-      if (r)
+      const rt = ratings[chk.check_code];
+      if (rt)
         items.push({
           target: chk.check_code,
-          rating: r,
+          rating: rt,
+          expected: expectedChecks[chk.check_code] || null,
           note: notes[chk.check_code] || null,
         });
     }
@@ -227,6 +255,22 @@ export function Training() {
     }
   }
 
+  async function runSuggest() {
+    if (suggesting) return;
+    setSuggesting(true);
+    try {
+      setSuggest(await suggestRuleChanges());
+    } catch (e) {
+      setSuggest({
+        available: false,
+        suggestions: [],
+        message: e instanceof ApiError ? e.message : "could not get suggestions",
+      });
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       <h1 className="mb-1 text-xl font-bold text-gray-900">Training</h1>
@@ -237,6 +281,61 @@ export function Training() {
       </p>
 
       <MetricsPanel metrics={metrics} />
+
+      <div className="mb-6 rounded-lg border border-gray-300 bg-white p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">
+              AI rule suggestions
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Drafts reviewable rule/heuristic changes from where you disagreed with
+              the tool. Suggestions only — nothing is applied automatically.
+            </p>
+          </div>
+          <button
+            onClick={runSuggest}
+            disabled={suggesting}
+            className="shrink-0 rounded border border-gray-400 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+          >
+            {suggesting ? "Thinking…" : "Suggest improvements"}
+          </button>
+        </div>
+        {suggest && (
+          <div className="mt-4">
+            {suggest.message && (
+              <p className="text-xs text-gray-600">{suggest.message}</p>
+            )}
+            <div className="mt-2 space-y-2">
+              {suggest.suggestions.map((s, i) => (
+                <div key={i} className="rounded border border-gray-200 bg-gray-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-gray-800">
+                      {s.title}
+                    </span>
+                    {s.confidence && (
+                      <span className="text-[10px] uppercase tracking-wide text-gray-400">
+                        {s.confidence} confidence
+                      </span>
+                    )}
+                  </div>
+                  {s.target && (
+                    <div className="mt-0.5 text-xs text-gray-500">{s.target}</div>
+                  )}
+                  {s.rationale && (
+                    <p className="mt-1 text-xs text-gray-600">{s.rationale}</p>
+                  )}
+                  {s.proposed_change && (
+                    <pre className="mt-2 overflow-x-auto rounded bg-gray-900 p-2 text-[11px] text-gray-100">
+                      {s.proposed_change}
+                    </pre>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {phase === "saved" && (
         <div className="mb-6 rounded-lg border border-green-300 bg-green-50 p-4 text-sm text-green-900">
@@ -307,7 +406,7 @@ export function Training() {
                 value={ratings["verdict"]}
                 onChange={(r) => setRatings((p) => ({ ...p, verdict: r }))}
               />
-              {ratings["verdict"] === "wrong" && (
+              {(expectedMode || ratings["verdict"] === "wrong") && (
                 <select
                   value={expectedVerdict}
                   onChange={(e) => setExpectedVerdict(e.target.value)}
@@ -322,6 +421,25 @@ export function Training() {
                 </select>
               )}
             </div>
+          </div>
+
+          <div className="mb-3 flex items-center justify-between rounded bg-gray-50 px-3 py-2">
+            <label className="flex items-center gap-2 text-xs font-medium text-gray-700">
+              <input
+                type="checkbox"
+                checked={expectedMode}
+                onChange={(e) => setExpectedMode(e.target.checked)}
+              />
+              I have the expected results (auto-score)
+            </label>
+            {expectedMode && (
+              <button
+                onClick={autoScore}
+                className="rounded border border-gray-400 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-100"
+              >
+                Auto-score from expected
+              </button>
+            )}
           </div>
 
           <div className="divide-y divide-gray-200 border-y border-gray-200">
@@ -339,12 +457,34 @@ export function Training() {
                     </span>
                     <p className="mt-0.5 text-xs text-gray-500">{chk.reason}</p>
                   </div>
-                  <RatingButtons
-                    value={ratings[chk.check_code]}
-                    onChange={(r) =>
-                      setRatings((p) => ({ ...p, [chk.check_code]: r }))
-                    }
-                  />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {expectedMode && (
+                      <select
+                        value={expectedChecks[chk.check_code] ?? ""}
+                        onChange={(e) =>
+                          setExpectedChecks((p) => ({
+                            ...p,
+                            [chk.check_code]: e.target.value,
+                          }))
+                        }
+                        className="rounded border border-gray-300 px-1.5 py-1 text-xs"
+                        title="expected result"
+                      >
+                        <option value="">Expected…</option>
+                        {CHECK_RESULTS.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <RatingButtons
+                      value={ratings[chk.check_code]}
+                      onChange={(r) =>
+                        setRatings((p) => ({ ...p, [chk.check_code]: r }))
+                      }
+                    />
+                  </div>
                 </div>
                 {ratings[chk.check_code] &&
                   ratings[chk.check_code] !== "correct" && (
