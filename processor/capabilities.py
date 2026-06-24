@@ -113,7 +113,10 @@ def _rasterize(path: str):
 def _decode_image(img, backend: str) -> Optional[str]:
     if backend == "pylibdmtx":
         from pylibdmtx.pylibdmtx import decode
-        res = decode(img)
+        # libdmtx scans the whole image at every scale/rotation; on a full-page raster with no
+        # symbol it can grind for minutes. Bound it: stop at the first symbol and cap wall time
+        # so a non-decoding page can never wedge the request (falls back to the sample registry).
+        res = decode(img, timeout=8000, max_count=1)
         if res:
             return res[0].data.decode("utf-8", "replace")
     elif backend == "pyzbar":
