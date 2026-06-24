@@ -47,6 +47,9 @@ export function Header({ onLogout }: { onLogout: () => void }) {
           <NavLink to="/history" className={navClass}>
             History
           </NavLink>
+          <NavLink to="/training" className={navClass}>
+            Training
+          </NavLink>
           <NavLink to="/rules" className={navClass}>
             Rules
           </NavLink>

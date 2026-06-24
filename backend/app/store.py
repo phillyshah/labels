@@ -29,6 +29,37 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
+def _summarize_metrics(feedback: List[Dict], batches: int) -> Dict:
+    """Accuracy dashboard from the feedback corpus. correct=1, partial=0.5, wrong=0."""
+    weight = {"correct": 1.0, "partial": 0.5, "wrong": 0.0}
+
+    def bucket():
+        return {"correct": 0, "partial": 0, "wrong": 0}
+
+    overall = bucket()
+    by_target: Dict[str, Dict] = {}
+    for f in feedback:
+        r = f.get("rating")
+        if r not in weight:
+            continue
+        overall[r] += 1
+        t = f.get("target") or "?"
+        by_target.setdefault(t, bucket())[r] += 1
+
+    def acc(b: Dict) -> Optional[float]:
+        n = b["correct"] + b["partial"] + b["wrong"]
+        if not n:
+            return None
+        return round((b["correct"] * weight["correct"] + b["partial"] * weight["partial"]) / n, 4)
+
+    return {
+        "batches": batches,
+        "feedback_count": len(feedback),
+        "overall": {**overall, "accuracy": acc(overall)},
+        "by_target": {t: {**b, "accuracy": acc(b)} for t, b in sorted(by_target.items())},
+    }
+
+
 class LocalStore:
     """Filesystem-backed store for development (no Supabase required)."""
 
@@ -37,17 +68,21 @@ class LocalStore:
         (self.root / "uploads").mkdir(parents=True, exist_ok=True)
         self._db = self.root / "db.json"
         if not self._db.exists():
-            self._write({"submissions": {}, "check_results": [], "approvals": {}, "audit_log": []})
+            self._write({"submissions": {}, "check_results": [], "approvals": {},
+                         "audit_log": [], "feedback": []})
 
     # --- internals ---
     def _read(self) -> Dict:
-        return json.loads(self._db.read_text())
+        data = json.loads(self._db.read_text())
+        data.setdefault("feedback", [])  # backfill for dbs created before training existed
+        return data
 
     def _write(self, data: Dict) -> None:
         self._db.write_text(json.dumps(data, indent=2, default=str))
 
     # --- submissions ---
-    def create_submission(self, identity: Optional[Dict] = None) -> str:
+    def create_submission(self, identity: Optional[Dict] = None,
+                          is_training: bool = False) -> str:
         sid = _new_id()
         data = self._read()
         data["submissions"][sid] = {
@@ -55,6 +90,7 @@ class LocalStore:
             "verdict": None, "rules_version": None, "processor_ms": None,
             "ref": (identity or {}).get("ref"), "lot": (identity or {}).get("lot"),
             "sterile_lot": (identity or {}).get("sterile_lot"), "error_detail": None,
+            "is_training": is_training,
         }
         self._write(data)
         return sid
@@ -99,9 +135,37 @@ class LocalStore:
     def get_submission(self, submission_id: str) -> Optional[Dict]:
         return self._read()["submissions"].get(submission_id)
 
-    def list_submissions(self) -> List[Dict]:
+    def list_submissions(self, training: Optional[bool] = False) -> List[Dict]:
         subs = list(self._read()["submissions"].values())
+        if training is not None:
+            subs = [s for s in subs if bool(s.get("is_training")) == training]
         return sorted(subs, key=lambda s: s["created_at"], reverse=True)
+
+    # --- feedback (training corpus) ---
+    def add_feedback(self, submission_id: str, items: List[Dict],
+                     by_name: Optional[str] = None) -> int:
+        data = self._read()
+        n = 0
+        for it in items:
+            data["feedback"].append({
+                "id": _new_id(), "submission_id": submission_id,
+                "target": it.get("target"), "rating": it.get("rating"),
+                "expected": it.get("expected"), "note": it.get("note"),
+                "created_by_name": by_name, "created_at": _now(),
+            })
+            n += 1
+        self._write(data)
+        return n
+
+    def get_feedback(self, submission_id: str) -> List[Dict]:
+        return [f for f in self._read().get("feedback", [])
+                if f.get("submission_id") == submission_id]
+
+    def training_metrics(self) -> Dict:
+        data = self._read()
+        fb = data.get("feedback", [])
+        training_subs = [s for s in data["submissions"].values() if s.get("is_training")]
+        return _summarize_metrics(fb, len(training_subs))
 
     # --- approvals + audit ---
     def create_approval(self, submission_id: str, decision: str, signed_by_name: str,
@@ -162,14 +226,15 @@ class PostgresStore(LocalStore):
         except Exception as e:  # connection refused / auth / bad host etc.
             return f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"
 
-    def create_submission(self, identity: Optional[Dict] = None) -> str:
+    def create_submission(self, identity: Optional[Dict] = None,
+                          is_training: bool = False) -> str:
         sid = _new_id()
         with self._connect() as con:
             con.execute(
-                "insert into submissions (id, ref, lot, sterile_lot, status) "
-                "values (%s,%s,%s,%s,'uploaded')",
+                "insert into submissions (id, ref, lot, sterile_lot, status, is_training) "
+                "values (%s,%s,%s,%s,'uploaded',%s)",
                 (sid, (identity or {}).get("ref"), (identity or {}).get("lot"),
-                 (identity or {}).get("sterile_lot")),
+                 (identity or {}).get("sterile_lot"), is_training),
             )
         return sid
 
@@ -250,13 +315,44 @@ class PostgresStore(LocalStore):
             sub["_result"] = stored
         return sub
 
-    def list_submissions(self) -> List[Dict]:
+    def list_submissions(self, training: Optional[bool] = False) -> List[Dict]:
+        where = "" if training is None else "where coalesce(is_training,false)=%s "
+        params = () if training is None else (training,)
         with self._connect() as con:
             cur = con.execute(
                 "select id, created_at, status, verdict, ref, lot, sterile_lot "
-                "from submissions order by created_at desc")
+                f"from submissions {where}order by created_at desc", params)
             cols = [d.name for d in cur.description]
             return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    def add_feedback(self, submission_id: str, items: List[Dict],
+                     by_name: Optional[str] = None) -> int:
+        n = 0
+        with self._connect() as con:
+            for it in items:
+                con.execute(
+                    "insert into feedback (submission_id, target, rating, expected, note, "
+                    "created_by_name) values (%s,%s,%s,%s,%s,%s)",
+                    (submission_id, it.get("target"), it.get("rating"),
+                     it.get("expected"), it.get("note"), by_name))
+                n += 1
+        return n
+
+    def get_feedback(self, submission_id: str) -> List[Dict]:
+        with self._connect() as con:
+            cur = con.execute(
+                "select id, submission_id, target, rating, expected, note, created_by_name, "
+                "created_at from feedback where submission_id=%s order by created_at", (submission_id,))
+            cols = [d.name for d in cur.description]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+    def training_metrics(self) -> Dict:
+        with self._connect() as con:
+            cur = con.execute("select target, rating from feedback")
+            fb = [{"target": t, "rating": r} for t, r in cur.fetchall()]
+            cur = con.execute("select count(*) from submissions where coalesce(is_training,false)=true")
+            batches = cur.fetchone()[0]
+        return _summarize_metrics(fb, batches)
 
     def get_approval(self, submission_id: str) -> Optional[Dict]:
         with self._connect() as con:

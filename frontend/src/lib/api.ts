@@ -3,6 +3,7 @@
 // in production and behind the Vite dev proxy in development.
 
 import type {
+  FeedbackRequest,
   HealthResponse,
   LoginResponse,
   SignRequest,
@@ -10,6 +11,7 @@ import type {
   SubmissionError,
   SubmissionListItem,
   SubmissionResult,
+  TrainingMetrics,
 } from "./types";
 
 const TOKEN_KEY = "label_approval_token";
@@ -191,6 +193,52 @@ export async function fetchBundleUrl(id: string): Promise<string> {
   }
   const blob = await res.blob();
   return URL.createObjectURL(blob);
+}
+
+// --- Training / feedback ----------------------------------------------------
+
+// Same multipart shape as createSubmission, but the batch is tagged training (never signed)
+// and kept out of the live History. A 422 mismatch is still an expected business outcome.
+export async function createTrainingSubmission(
+  files: Record<string, File>,
+): Promise<CreateSubmissionResult | CreateSubmissionFailure> {
+  const form = new FormData();
+  for (const [field, file] of Object.entries(files)) form.append(field, file);
+  const res = await fetch("/api/training/submissions", {
+    method: "POST",
+    headers: { ...authHeaders() },
+    body: form,
+  });
+  if (res.status === 401) {
+    handleUnauthorized();
+    throw new ApiError(401, "session expired — please log in again");
+  }
+  const body = await parseJson(res);
+  if (res.status === 422) return { ok: false, error: body as SubmissionError };
+  if (!res.ok) throw new ApiError(res.status, `upload failed (${res.status})`, body);
+  return { ok: true, result: body as SubmissionResult };
+}
+
+export function listTrainingSubmissions(): Promise<SubmissionListItem[]> {
+  return request<SubmissionListItem[]>("/api/training/submissions");
+}
+
+export function trainingMetrics(): Promise<TrainingMetrics> {
+  return request<TrainingMetrics>("/api/training/metrics");
+}
+
+export function submitFeedback(
+  id: string,
+  body: FeedbackRequest,
+): Promise<{ saved: number }> {
+  return request<{ saved: number }>(
+    `/api/submissions/${encodeURIComponent(id)}/feedback`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
 }
 
 // --- Health -----------------------------------------------------------------

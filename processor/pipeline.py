@@ -42,8 +42,9 @@ def process_submission(documents: Dict[str, str], rules: Dict,
     if missing:
         return _error("MISSING_DOCUMENT", f"{missing[0]} not provided", submission_id)
 
-    # Stage 1b -- document identification (template fingerprint). A file dropped into the wrong
-    # slot (e.g. a CoC where the Sterile Lot Record belongs) is caught here.
+    # Stage 1b -- document identification (template match). A file dropped into the wrong slot
+    # (e.g. the two Certificates of Compliance swapped, or a CoC where the label belongs) is
+    # caught here and surfaced as a clear notification rather than analysed silently.
     classification_error = _classify(documents)
     if classification_error:
         return _error(*classification_error, submission_id=submission_id)
@@ -79,29 +80,15 @@ def process_submission(documents: Dict[str, str], rules: Dict,
 
 
 def _classify(documents: Dict[str, str]) -> Optional[tuple]:
-    """Verify each supplied file matches the document type of its slot, by content fingerprint.
-
-    Returns an (error_code, detail) tuple on mismatch, else None.
+    """Verify each supplied file matches the document type of its slot, against the known
+    WI052 templates. Returns an (error_code, detail) tuple on a confident mismatch, else None.
     """
+    from .classify import classify_documents, describe
     from .extraction import _read_text  # local import: text-layer probe
 
-    fingerprints = {
-        "batch_coc": ("Certificate of Compliance", "Quantity shipped"),
-        "sterile_coc": ("CERTIFICATE OF COMPLIANCE", "Batch/Lot"),
-        "sterile_lot_record": ("Sterile Lot Record", "Form 1023-2"),
-    }
-    for slot, needles in fingerprints.items():
-        path = documents.get(slot)
-        if not path:
-            continue
-        text = _read_text(path)
-        if not text:
-            # Image-only document with no text layer: can't fingerprint here. The label is
-            # expected to be image-only; other slots without text are allowed through to the
-            # linkage/extraction stage rather than hard-failing on tooling absence.
-            continue
-        low = text.lower()
-        if not any(n.lower() in low for n in needles):
-            return ("UNCLASSIFIED",
-                    f"document in slot '{slot}' does not match its expected type")
+    texts = {slot: _read_text(path) for slot, path in documents.items()
+             if path and slot in {"label_form", "batch_coc", "sterile_coc", "sterile_lot_record"}}
+    issues = classify_documents(texts)
+    if issues:
+        return ("DOCUMENT_MISMATCH", describe(issues))
     return None

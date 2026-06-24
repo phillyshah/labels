@@ -113,6 +113,36 @@ export interface HealthResponse {
   rules_version: string;
 }
 
+// --- Training / feedback ----------------------------------------------------
+
+export type Rating = "correct" | "partial" | "wrong";
+
+export interface FeedbackItem {
+  target: string; // 'A'..'G', 'verdict', or a field name
+  rating: Rating;
+  expected?: string | null;
+  note?: string | null;
+}
+
+export interface FeedbackRequest {
+  reviewer_name?: string;
+  items: FeedbackItem[];
+}
+
+interface RatingBucket {
+  correct: number;
+  partial: number;
+  wrong: number;
+  accuracy: number | null;
+}
+
+export interface TrainingMetrics {
+  batches: number;
+  feedback_count: number;
+  overall: RatingBucket;
+  by_target: Record<string, RatingBucket>;
+}
+
 // The upload form's six document slots.
 export const REQUIRED_DOCS = [
   "label_form",

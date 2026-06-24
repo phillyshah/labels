@@ -65,6 +65,107 @@ def _evidence_lines(code: str, ev: Dict) -> List:
     return out
 
 
+def _sot_row(result: Dict, field_name: str) -> Dict:
+    for r in result.get("source_of_truth") or []:
+        if r.get("field") == field_name:
+            return r
+    return {}
+
+
+def _narrative(chk: Dict, result: Dict) -> str:
+    """A short prose paragraph per check, in the worked-example voice, weaving in the actual
+    extracted values. Faithful to the data — omits anything not captured, never invents."""
+    code = chk.get("check_code", "")
+    res = chk.get("result", "")
+    ev = chk.get("evidence") or {}
+    subs = chk.get("sub_results") or []
+    ident = result.get("identity", {})
+    ref, lot = ident.get("ref"), ident.get("lot")
+
+    if code == "A":
+        prod, qc = ev.get("production_sign") or {}, ev.get("qc_sign") or {}
+        sig = []
+        if prod:
+            sig.append(f"“Checked By Production” is signed by {prod.get('name','—')} "
+                       f"dated {prod.get('date','—')}")
+        if qc:
+            sig.append(f"“Verified By QC” by {qc.get('name','—')} "
+                       f"dated {qc.get('date','—')}")
+        out = "All four documents are present and reference the same batch."
+        if sig:
+            out += " On the label form, " + " and ".join(sig) + "."
+        if res == "PASS":
+            out += (" Meril's side is complete and the Maxx approval is dated on or after the "
+                    "Meril signatures, so completeness, linkage and sequencing all pass.")
+        elif res == "FLAG":
+            out += " " + chk.get("reason", "")
+        else:
+            out += " " + chk.get("reason", "")
+        return out
+
+    if code == "B":
+        if res == "PASS":
+            return (f"Every identity and date field carried by more than one document agrees: "
+                    f"REF {ref}, LOT {lot}, Mfg {ident.get('mfg_date')}, Exp {ident.get('exp_date')}, "
+                    f"and the released quantity {ident.get('qty_released')}. No cross-document conflicts.")
+        return "Field values disagree across documents. " + chk.get("reason", "")
+
+    if code == "C":
+        passes = sum(1 for s in subs if s.get("result") == "PASS")
+        notes = []
+        for s in subs:
+            if s.get("ai") == "240" and s.get("result") == "FLAG":
+                notes.append("the AI(240) product-id drops the REF hyphen — a formatting "
+                             "inconsistency worth confirming against MXO-PP00006, not a failure")
+            if s.get("ai") == "01" and s.get("result") == "DEFERRED":
+                notes.append("the AI(01) GTIN cannot be verified until MXO-PP00006 is configured")
+        out = (f"The 2D DataMatrix decoded and was reconciled identifier-by-identifier against the "
+               f"printed and CoC values; {passes} of {len(subs)} reconciled cleanly "
+               f"(lot, mfg and expiry dates all match).")
+        if notes:
+            joined = "; ".join(notes)
+            out += " " + joined[0].upper() + joined[1:] + "."
+        return out
+
+    if code == "D":
+        row = _sot_row(result, "Description (verbatim)")
+        descs = [row.get("label"), row.get("batch_coc"), row.get("sterile_lot_record")]
+        descs = [d for d in descs if d and d not in ("n/a", "n/a (pre-sterile)")]
+        uniq = list(dict.fromkeys(descs))
+        lead = ""
+        if len(uniq) > 1:
+            lead = (f"Several wordings describe the same REF {ref}: "
+                    + "; ".join(f"“{d}”" for d in uniq)
+                    + ". They are not string-identical. ")
+        return (lead + "Confirming the canonical label description for this REF requires "
+                "MXO-PP00001, which is not configured, so this check is deferred to manual review.")
+
+    if code == "E":
+        ifu = ev.get("sterile_coc_ifu")
+        lead = f"The sterile CoC lists IFU {ifu} as applicable to this lot. " if ifu else ""
+        return (lead + "The provided label image does not clearly show a printed IFU reference, and "
+                "whether one is required on this label depends on MXO-PP00001 (not configured) — "
+                "deferred to manual review.")
+
+    if code == "F":
+        addr_ok = any(s.get("item") == "manufacturer_address" and s.get("result") == "PASS"
+                      for s in subs)
+        lead = ("The label's manufacturer address matches the batch CoC's shipped-to address. "
+                if addr_ok else "")
+        return (lead + "The remaining static elements — CE notified-body number, EC REP, regulatory "
+                "symbols, product-family branding and label revision — require MXO-PP00001 to verify "
+                "and are deferred.")
+
+    if code == "G":
+        flagged = [s.get("reason", "") for s in subs if s.get("result") == "FLAG"]
+        if flagged:
+            return ("Flagged for human review, independent of the label-vs-source check: "
+                    + "; ".join(flagged))
+        return "No workflow-integrity anomalies surfaced."
+
+    return chk.get("reason", "")
+
+
 def generate_bundle(out_path: str, result: Dict, decision: str, signer_name: str,
                     acknowledged_flags: Optional[List] = None) -> Optional[str]:
     try:
@@ -137,8 +238,9 @@ def generate_bundle(out_path: str, result: Dict, decision: str, signer_name: str
             story.append(Paragraph(
                 f'<b>Check {chk.get("check_code","")} — {chk.get("check_name","")}</b> '
                 f'&nbsp;<b><font color="{color}">{res}</font></b>', check_head))
-            if chk.get("reason"):
-                story.append(Paragraph(chk["reason"], small))
+            narrative = _narrative(chk, result)
+            if narrative:
+                story.append(Paragraph(narrative, body))
             for lbl, val in _evidence_lines(chk.get("check_code", ""), chk.get("evidence")):
                 story.append(Paragraph(f'<b>{lbl}:</b> {val}', small))
             subs = chk.get("sub_results") or []

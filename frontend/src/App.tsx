@@ -12,6 +12,7 @@ import { NewReview } from "./screens/NewReview";
 import { Scorecard } from "./screens/Scorecard";
 import { History } from "./screens/History";
 import { Rules } from "./screens/Rules";
+import { Training } from "./screens/Training";
 
 export default function App() {
   const navigate = useNavigate();
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/new" element={<NewReview />} />
           <Route path="/submissions/:id" element={<Scorecard />} />
           <Route path="/history" element={<History />} />
+          <Route path="/training" element={<Training />} />
           <Route path="/rules" element={<Rules />} />
           <Route path="*" element={<Navigate to="/new" replace />} />
         </Routes>

@@ -36,6 +36,24 @@ create table if not exists submissions (
 -- Backfill for projects created before result_json existed (safe to re-run).
 alter table submissions add column if not exists result_json jsonb;
 
+-- Training batches are processed like any submission but never signed; they exist to collect
+-- reviewer feedback that drives rule/config tuning (and, later, an LLM-assist step).
+alter table submissions add column if not exists is_training boolean not null default false;
+
+-- feedback: per-check (or per-verdict) reviewer judgement on a processed batch. The labeled
+-- corpus the training section accumulates; queryable for the accuracy dashboard.
+create table if not exists feedback (
+  id              uuid primary key default gen_random_uuid(),
+  submission_id   uuid not null references submissions(id) on delete cascade,
+  target          text not null,          -- 'A'..'G', 'verdict', or a field name
+  rating          text not null check (rating in ('correct','wrong','partial')),
+  expected        text,                   -- optional: what the right answer should have been
+  note            text,                   -- free-text reviewer comment
+  created_by_name text,
+  created_at      timestamptz not null default now()
+);
+create index if not exists feedback_submission_idx on feedback(submission_id);
+
 -- check_results: one row per individual check, per submission.
 create table if not exists check_results (
   id            uuid primary key default gen_random_uuid(),

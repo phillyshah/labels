@@ -89,26 +89,11 @@ def api_login(req: LoginRequest):
     return {"token": token, "role": "reviewer"}
 
 
-@app.post("/api/submissions")
-async def api_create_submission(
-    _: dict = Depends(auth.current_reviewer),
-    label_form: UploadFile = File(...),
-    batch_coc: UploadFile = File(...),
-    sterile_coc: UploadFile = File(...),
-    sterile_lot_record: UploadFile = File(...),
-    doc_release_verification: Optional[UploadFile] = File(None),
-    sterile_product_release_verification: Optional[UploadFile] = File(None),
-):
-    store = get_store()
-    uploads = {
-        "label_form": label_form, "batch_coc": batch_coc,
-        "sterile_coc": sterile_coc, "sterile_lot_record": sterile_lot_record,
-        "doc_release_verification": doc_release_verification,
-        "sterile_product_release_verification": sterile_product_release_verification,
-    }
+async def _ingest(store, uploads: dict, is_training: bool):
+    """Shared upload→persist→process path for both the live and training flows."""
     try:
-        sid = store.create_submission()
-        store.append_audit("UPLOAD", submission_id=sid)
+        sid = store.create_submission(is_training=is_training)
+        store.append_audit("UPLOAD", submission_id=sid, detail={"training": is_training})
 
         paths = {}
         for doc_type, upload in uploads.items():
@@ -133,6 +118,94 @@ async def api_create_submission(
     store.set_result(sid, result)
     store.append_audit("VERDICT", submission_id=sid, detail={"verdict": result["verdict"]})
     return result
+
+
+@app.post("/api/submissions")
+async def api_create_submission(
+    _: dict = Depends(auth.current_reviewer),
+    label_form: UploadFile = File(...),
+    batch_coc: UploadFile = File(...),
+    sterile_coc: UploadFile = File(...),
+    sterile_lot_record: UploadFile = File(...),
+    doc_release_verification: Optional[UploadFile] = File(None),
+    sterile_product_release_verification: Optional[UploadFile] = File(None),
+):
+    uploads = {
+        "label_form": label_form, "batch_coc": batch_coc,
+        "sterile_coc": sterile_coc, "sterile_lot_record": sterile_lot_record,
+        "doc_release_verification": doc_release_verification,
+        "sterile_product_release_verification": sterile_product_release_verification,
+    }
+    return await _ingest(get_store(), uploads, is_training=False)
+
+
+# --- training / feedback ----------------------------------------------------
+
+@app.post("/api/training/submissions")
+async def api_create_training_submission(
+    _: dict = Depends(auth.current_reviewer),
+    label_form: UploadFile = File(...),
+    batch_coc: UploadFile = File(...),
+    sterile_coc: UploadFile = File(...),
+    sterile_lot_record: UploadFile = File(...),
+    doc_release_verification: Optional[UploadFile] = File(None),
+    sterile_product_release_verification: Optional[UploadFile] = File(None),
+):
+    uploads = {
+        "label_form": label_form, "batch_coc": batch_coc,
+        "sterile_coc": sterile_coc, "sterile_lot_record": sterile_lot_record,
+        "doc_release_verification": doc_release_verification,
+        "sterile_product_release_verification": sterile_product_release_verification,
+    }
+    return await _ingest(get_store(), uploads, is_training=True)
+
+
+@app.get("/api/training/submissions")
+def api_list_training(_: dict = Depends(auth.current_reviewer)):
+    rows = get_store().list_submissions(training=True)
+    return [{k: v for k, v in r.items() if k != "_result"} for r in rows]
+
+
+@app.get("/api/training/metrics")
+def api_training_metrics(_: dict = Depends(auth.current_reviewer)):
+    return get_store().training_metrics()
+
+
+class FeedbackItem(BaseModel):
+    target: str                         # 'A'..'G', 'verdict', or a field name
+    rating: str                         # correct | partial | wrong
+    expected: Optional[str] = None
+    note: Optional[str] = None
+
+
+class FeedbackRequest(BaseModel):
+    reviewer_name: Optional[str] = None
+    items: List[FeedbackItem]
+
+
+@app.post("/api/submissions/{submission_id}/feedback")
+def api_add_feedback(submission_id: str, req: FeedbackRequest,
+                     _: dict = Depends(auth.current_reviewer)):
+    store = get_store()
+    if not store.get_submission(submission_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "submission not found")
+    valid = {"correct", "partial", "wrong"}
+    bad = [it.target for it in req.items if it.rating not in valid]
+    if bad:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "rating must be one of correct/partial/wrong")
+    n = store.add_feedback(
+        submission_id,
+        [it.model_dump() for it in req.items],
+        by_name=(req.reviewer_name or "").strip() or None)
+    store.append_audit("FEEDBACK", submission_id=submission_id,
+                       actor=req.reviewer_name, detail={"count": n})
+    return {"saved": n}
+
+
+@app.get("/api/submissions/{submission_id}/feedback")
+def api_get_feedback(submission_id: str, _: dict = Depends(auth.current_reviewer)):
+    return get_store().get_feedback(submission_id)
 
 
 @app.get("/api/submissions")
