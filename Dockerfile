@@ -14,7 +14,7 @@ FROM python:3.11-slim AS app
 # System tooling the processor binds to (poppler/tesseract/zbar/dmtx). This is the one image
 # where we DO install the document stack; on a shared VPS confirm these are acceptable (Q#12).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        poppler-utils tesseract-ocr libzbar0 libdmtx0 \
+        poppler-utils tesseract-ocr libzbar0 libdmtx0t64 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
