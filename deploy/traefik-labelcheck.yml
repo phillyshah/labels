@@ -1,0 +1,27 @@
+# Traefik dynamic route for labelcheck.90ten.life
+#
+# WHY A FILE AND NOT DOCKER LABELS:
+# Traefik on this VPS cannot use its Docker provider — the daemon rejects Traefik's
+# Docker API client ("client version 1.24 is too old. Minimum supported API version
+# is 1.40"). So the labels in docker-compose.yml are inert; ALL services on this host
+# are routed via static files in /opt/traefik/dynamic/ instead. This file is the real
+# router. Install it at: /opt/traefik/dynamic/labelcheck.yml (Traefik hot-reloads it).
+#
+# The service URL uses the compose container name on the shared `proxy` network, which
+# Docker DNS resolves. If you rename the compose project/service, update the url below.
+
+http:
+  routers:
+    labelcheck:
+      rule: "Host(`labelcheck.90ten.life`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: labelcheck
+
+  services:
+    labelcheck:
+      loadBalancer:
+        servers:
+          - url: "http://labelcheck-labelcheck-1:8000"

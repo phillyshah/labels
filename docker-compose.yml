@@ -1,11 +1,12 @@
 # Maxx Label Approval — production compose, Traefik-fronted (usage-repo style).
 #
-# PREPARED, NOT DEPLOYED. Before first deploy, confirm against the live VPS:
-#   - the EXISTING shared Traefik network name (here: `traefik`),
-#   - the EXISTING certresolver + entrypoint names (here: `letsencrypt` / `websecure`),
-#   - the subdomain `labelcheck.90ten.life` and its DNS record,
-#   - the document-tooling inventory (docs/09 Q#12).
-# Match the conventions of a working 90ten.life service (e.g. rumors/usage) rather than guessing.
+# DEPLOYED at https://labelcheck.90ten.life on the Hostinger VPS (72.62.174.193).
+# Shared Traefik network is `proxy`; entrypoint `websecure`; certresolver `letsencrypt`.
+#
+# IMPORTANT: the traefik.* labels below are INERT on this VPS — Traefik's Docker provider
+# is broken there (Docker API too new for Traefik's client), so routing is done by the
+# static file deploy/traefik-labelcheck.yml installed at /opt/traefik/dynamic/labelcheck.yml.
+# The labels are kept for portability to a host where the Docker provider works.
 
 services:
   labelcheck:
