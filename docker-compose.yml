@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
     env_file: .env
     networks:
-      - traefik
+      - proxy
     expose:
       - "8000"
     labels:
@@ -30,5 +30,5 @@ services:
       retries: 3
 
 networks:
-  traefik:
+  proxy:
     external: true   # the network already created by the existing Traefik stack on the VPS
