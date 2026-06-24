@@ -86,6 +86,45 @@ def generate_bundle(out_path: str, result: Dict, decision: str, signer_name: str
         ]))
         story.append(t)
 
+    # --- Section 2: check-by-check detail (narrative + evidence sub-results) ---
+    checks = result.get("checks", [])
+    if checks:
+        story.append(Paragraph("Section 2 — Check-by-check detail", h2))
+        check_head = ParagraphStyle("ch", parent=body, fontSize=9, spaceBefore=7, spaceAfter=2)
+        for chk in checks:
+            res = chk.get("result", "")
+            color = RESULT_COLORS.get(res, "#111827")
+            story.append(Paragraph(
+                f'<b>Check {chk.get("check_code","")} — {chk.get("check_name","")}</b> '
+                f'&nbsp;<b><font color="{color}">{res}</font></b>', check_head))
+            if chk.get("reason"):
+                story.append(Paragraph(chk["reason"], small))
+            subs = chk.get("sub_results") or []
+            if subs:
+                sd = [[Paragraph("<b>Item</b>", small), Paragraph("<b>Result</b>", small),
+                       Paragraph("<b>Detail</b>", small)]]
+                for s in subs:
+                    sres = s.get("result", "")
+                    scolor = RESULT_COLORS.get(sres, "#111827")
+                    item = s.get("ai") or s.get("item") or s.get("field") or ""
+                    if s.get("ai"):
+                        item = f"AI({item})"
+                    sd.append([
+                        Paragraph(str(item), small),
+                        Paragraph(f'<b><font color="{scolor}">{sres}</font></b>', small),
+                        Paragraph(str(s.get("reason", "")), small),
+                    ])
+                sub_t = Table(sd, colWidths=[1.4 * inch, 0.8 * inch, 4.3 * inch])
+                sub_t.setStyle(TableStyle([
+                    ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#e5e7eb")),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f9fafb")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ]))
+                story.append(Spacer(1, 0.03 * inch))
+                story.append(sub_t)
+
     # --- Section 3: scorecard ---
     story.append(Paragraph("Section 3 — Summary scorecard", h2))
     sc = [[Paragraph("<b>Check</b>", small), Paragraph("<b>Name</b>", small),

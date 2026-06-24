@@ -27,8 +27,14 @@ create table if not exists submissions (
   verdict         text check (verdict in ('APPROVE','APPROVE_WITH_FLAGS','REJECT')),
   processor_ms    integer,
   rules_version   text,
-  error_detail    text
+  error_detail    text,
+  result_json     jsonb           -- full processor result (source-of-truth table, barcode, full
+                                  -- identity, per-check evidence) so the scorecard + signed bundle
+                                  -- can be rebuilt faithfully; check_results stays the queryable index.
 );
+
+-- Backfill for projects created before result_json existed (safe to re-run).
+alter table submissions add column if not exists result_json jsonb;
 
 -- check_results: one row per individual check, per submission.
 create table if not exists check_results (

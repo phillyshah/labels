@@ -66,13 +66,53 @@ def _parse_fnc1(payload: str) -> Dict[str, str]:
             i += width
         else:                     # variable: read to FNC1 or end
             j = s.find(_GS, i)
-            if j == -1:
-                out[ai] = s[i:]
-                i = n
-            else:
+            if j != -1:
                 out[ai] = s[i:j]
                 i = j + 1
+            else:
+                # No separator. Some real GS1 DataMatrix symbols (and many decoders) omit the
+                # FNC1, so a variable field can run straight into the following fixed AIs. If an
+                # unambiguous fixed-AI boundary is embedded ahead (a GTIN or a valid YYMMDD date
+                # AI), peel the value there instead of swallowing the rest. Falls back to the old
+                # greedy read when no such boundary exists, so well-formed payloads are unchanged.
+                k = _runon_boundary(s, i)
+                if k is None:
+                    out[ai] = s[i:]
+                    i = n
+                else:
+                    out[ai] = s[i:k]
+                    i = k
     return out
+
+
+# Fixed-length AIs whose value shape is self-validating enough to mark a boundary inside an
+# FNC1-less run-on: GTINs (14 digits) and the date AIs (a valid YYMMDD).
+_DATE_AIS = {"11", "12", "13", "15", "16", "17"}
+
+
+def _is_valid_date_ai(six: str) -> bool:
+    if len(six) != 6 or not six.isdigit():
+        return False
+    try:
+        gs1_date_to_iso(six)
+        return True
+    except ValueError:
+        return False
+
+
+def _runon_boundary(s: str, start: int) -> int | None:
+    """Smallest index k > start where a date AI (11/12/13/15/16/17 + a *valid* YYMMDD) begins.
+
+    Only date AIs qualify: a valid YYMMDD is self-validating enough to rule out false splits
+    inside an alphanumeric lot like ``V11022719`` (its embedded ``11022719`` is rejected because
+    ``022719`` — month 27 — is not a real date). GTIN/other numeric AIs are *not* used as
+    boundaries; ``NN + 14 digits`` matches far too readily inside any numeric run.
+    """
+    n = len(s)
+    for k in range(start + 1, n - 1):
+        if s[k:k + 2] in _DATE_AIS and _is_valid_date_ai(s[k + 2:k + 8]):
+            return k
+    return None
 
 
 def _match_ai(s: str, i: str) -> str | None:

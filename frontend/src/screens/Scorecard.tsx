@@ -101,6 +101,23 @@ export function Scorecard() {
   return <ScorecardBody result={result} />;
 }
 
+// A human- and file-system-friendly download name, e.g.
+//   Maxx-LabelReview_MTUUX400-K_V11022719_RELEASED_2026-06-24.pdf
+function bundleFilename(
+  result: SubmissionResult,
+  decision: string,
+  signedAt: string,
+): string {
+  const safe = (v: string | null | undefined) =>
+    (v ?? "NA").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "NA";
+  const ref = safe(result.identity?.ref);
+  const lot = safe(result.identity?.lot);
+  const date = (signedAt ? new Date(signedAt) : new Date())
+    .toISOString()
+    .slice(0, 10);
+  return `Maxx-LabelReview_${ref}_${lot}_${decision}_${date}.pdf`;
+}
+
 function ScorecardBody({ result }: { result: SubmissionResult }) {
   const flags = useMemo(() => collectFlags(result), [result]);
   const deferred = useMemo(() => collectDeferred(result), [result]);
@@ -270,6 +287,11 @@ function ScorecardBody({ result }: { result: SubmissionResult }) {
             bundleUrl ? (
               <a
                 href={bundleUrl}
+                download={bundleFilename(
+                  result,
+                  signed.approval.decision,
+                  signed.approval.signed_at,
+                )}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-3 inline-block rounded bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"

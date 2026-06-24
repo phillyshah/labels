@@ -178,9 +178,10 @@ class PostgresStore(LocalStore):
         with self._connect() as con:
             con.execute(
                 "update submissions set status='reviewed', verdict=%s, rules_version=%s, "
-                "processor_ms=%s, ref=%s, lot=%s, sterile_lot=%s where id=%s",
+                "processor_ms=%s, ref=%s, lot=%s, sterile_lot=%s, result_json=%s where id=%s",
                 (result.get("verdict"), result.get("rules_version"), result.get("processor_ms"),
-                 ident.get("ref"), ident.get("lot"), ident.get("sterile_lot"), submission_id),
+                 ident.get("ref"), ident.get("lot"), ident.get("sterile_lot"),
+                 json.dumps(result), submission_id),
             )
             con.execute("delete from check_results where submission_id=%s", (submission_id,))
             for c in result.get("checks", []):
@@ -190,6 +191,14 @@ class PostgresStore(LocalStore):
                     (submission_id, c["check_code"], c.get("check_name", ""), c["result"],
                      c.get("reason", ""), json.dumps(c.get("evidence", {}))),
                 )
+
+    def set_error(self, submission_id: str, error: Dict) -> None:
+        # Parent writes to the JSON file (which has no PG row); persist to Postgres instead.
+        with self._connect() as con:
+            con.execute(
+                "update submissions set status='error', error_detail=%s, result_json=%s where id=%s",
+                (error.get("detail"), json.dumps(error), submission_id),
+            )
 
     def create_approval(self, submission_id, decision, signed_by_name,
                         acknowledged_flags=None, bundle_path=None) -> Dict:
@@ -227,30 +236,18 @@ class PostgresStore(LocalStore):
         with self._connect() as con:
             cur = con.execute(
                 "select id, created_at, status, verdict, rules_version, processor_ms, "
-                "ref, lot, sterile_lot, error_detail from submissions where id=%s",
+                "ref, lot, sterile_lot, error_detail, result_json from submissions where id=%s",
                 (submission_id,))
             row = cur.fetchone()
             if not row:
                 return None
             cols = [d.name for d in cur.description]
             sub = dict(zip(cols, row))
-            cur = con.execute(
-                "select check_code, check_name, result, reason, evidence "
-                "from check_results where submission_id=%s order by check_code",
-                (submission_id,))
-            ccols = [d.name for d in cur.description]
-            checks = [dict(zip(ccols, r)) for r in cur.fetchall()]
-        # Rebuild the API-shaped result the scorecard view expects.
-        if checks:
-            sub["_result"] = {
-                "submission_id": submission_id,
-                "verdict": sub.get("verdict"),
-                "rules_version": sub.get("rules_version"),
-                "processor_ms": sub.get("processor_ms"),
-                "identity": {"ref": sub.get("ref"), "lot": sub.get("lot"),
-                             "sterile_lot": sub.get("sterile_lot")},
-                "checks": checks,
-            }
+        # Prefer the full stored result so the scorecard + signed bundle get the source-of-truth
+        # table, full identity and per-check evidence verbatim (psycopg returns jsonb as a dict).
+        stored = sub.pop("result_json", None)
+        if stored:
+            sub["_result"] = stored
         return sub
 
     def list_submissions(self) -> List[Dict]:

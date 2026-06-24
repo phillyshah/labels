@@ -189,11 +189,19 @@ def api_sign(submission_id: str, req: SignRequest,
 
 @app.get("/api/submissions/{submission_id}/bundle")
 def api_bundle(submission_id: str, _: dict = Depends(auth.current_reviewer)):
-    approval = get_store().get_approval(submission_id)
+    store = get_store()
+    approval = store.get_approval(submission_id)
     if not approval or not approval.get("bundle_path") or not Path(approval["bundle_path"]).exists():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "bundle not available")
-    return FileResponse(approval["bundle_path"], media_type="application/pdf",
-                        filename=f"{submission_id}.pdf")
+    sub = store.get_submission(submission_id) or {}
+
+    def _safe(v: object) -> str:
+        s = "".join(c if (c.isalnum() or c in "._-") else "-" for c in str(v or "NA"))
+        return s.strip("-") or "NA"
+
+    fname = (f"Maxx-LabelReview_{_safe(sub.get('ref'))}_{_safe(sub.get('lot'))}"
+             f"_{_safe(approval.get('decision'))}.pdf")
+    return FileResponse(approval["bundle_path"], media_type="application/pdf", filename=fname)
 
 
 # --- static SPA hosting (built frontend) ------------------------------------

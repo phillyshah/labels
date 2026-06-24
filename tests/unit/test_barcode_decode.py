@@ -58,3 +58,17 @@ def test_malformed_payload_does_not_crash():
 
 def test_empty_payload_returns_empty_dict():
     assert parse_gs1("") == {}
+
+
+def test_fnc1_less_runon_splits_on_date_ai_boundary():
+    # Some real GS1 DataMatrix symbols (and decoders) omit the FNC1 separators, so the
+    # variable-length (10) runs straight into the following fixed AIs. The lot's own digits
+    # (V11022719 -> embedded "11022719") must NOT trigger a false split, but the real (11)/(17)
+    # date AIs must. Mirrors the V11022719 label as decoded on the VPS.
+    runon = "01" + "00811767021838" + "10" + "V11022719" + "11" + "260301" \
+        + "17" + "310228" + "240" + "MTUUX400-K"
+    ais = parse_gs1(runon)
+    assert ais["10"] == "V11022719"   # not the swallowed run-on
+    assert ais["11"] == "260301"
+    assert ais["17"] == "310228"
+    assert ais["240"] == "MTUUX400-K"
