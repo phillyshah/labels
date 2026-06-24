@@ -25,6 +25,46 @@ def _stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _evidence_lines(code: str, ev: Dict) -> List:
+    """Per-check evidence as (label, value) pairs, so Section 2 cites the actual extracted facts
+    (signer names + dates, the cross-document field values, addresses, the deviation comment …)
+    rather than just the one-line summary. Mirrors the worked-example narrative depth."""
+    ev = ev or {}
+    out: List = []
+
+    def add(lbl, val):
+        if val not in (None, "", [], {}):
+            out.append((lbl, val))
+
+    def per_doc(d: Dict) -> str:
+        return "; ".join(f"{k}: {v}" for k, v in (d or {}).items() if v not in (None, ""))
+
+    if code == "A":
+        for who, key in (("Production", "production_sign"), ("QC", "qc_sign")):
+            s = ev.get(key) or {}
+            if s:
+                add(f"{who} signed", f"{s.get('name', '—')} on {s.get('date', '—')}")
+        add("Maxx approval", ev.get("maxx_approval"))
+    elif code == "B":
+        labels = {"ref": "REF", "lot": "LOT", "mfg_date": "Mfg date", "exp_date": "Exp date"}
+        for f, lbl in labels.items():
+            add(lbl, per_doc(ev.get(f)))
+        q = ev.get("qty") or {}
+        if q:
+            add("Quantity", f"label {q.get('label')} vs released {q.get('released')}")
+    elif code == "D":
+        add("Label description", ev.get("label"))
+    elif code == "E":
+        add("Sterile-CoC IFU", ev.get("sterile_coc_ifu"))
+    elif code == "F":
+        add("Label mfr address", ev.get("manufacturer_address_label"))
+        add("Batch-CoC shipped-to", ev.get("manufacturer_address_batch_coc"))
+    elif code == "G":
+        add("Barcode-scan box", ev.get("barcode_box"))
+        add("Deviation comment", ev.get("deviation_comment"))
+    return out
+
+
 def generate_bundle(out_path: str, result: Dict, decision: str, signer_name: str,
                     acknowledged_flags: Optional[List] = None) -> Optional[str]:
     try:
@@ -99,6 +139,8 @@ def generate_bundle(out_path: str, result: Dict, decision: str, signer_name: str
                 f'&nbsp;<b><font color="{color}">{res}</font></b>', check_head))
             if chk.get("reason"):
                 story.append(Paragraph(chk["reason"], small))
+            for lbl, val in _evidence_lines(chk.get("check_code", ""), chk.get("evidence")):
+                story.append(Paragraph(f'<b>{lbl}:</b> {val}', small))
             subs = chk.get("sub_results") or []
             if subs:
                 sd = [[Paragraph("<b>Item</b>", small), Paragraph("<b>Result</b>", small),
