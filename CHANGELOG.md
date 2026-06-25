@@ -7,6 +7,23 @@ developer-facing record.
 
 ---
 
+## [1.5.0] — 2026-06-25
+
+### Added
+- **Editable Rules screen** — the rule set that drives Checks C-AI(01), D, E and
+  F is now edited in-app instead of by hand-editing `config/rules.yaml`. Each
+  section has an Active/Deferred toggle, structured REF→value editors (GTIN map,
+  description map, REF→family map), the AI(240) hyphen policy + description
+  match-mode selectors, and a JSON editor for per-family static content.
+- **`GET /api/rules`** — returns the full active rule set (auth required).
+- **`PUT /api/rules`** — validates, normalizes REF keys (uppercase/trim, so
+  engine lookups can't silently miss), persists to the active rules file, and
+  writes a `RULES_UPDATE` audit entry. Returns the saved (normalized) rules.
+
+### Changed
+- **`config.py`** — added `validate_rules()` and `save_rules()`; the latter
+  merges over section defaults so a partial payload never drops required keys.
+
 ## [1.4.0] — 2026-06-25
 
 ### Added

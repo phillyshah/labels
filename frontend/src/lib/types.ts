@@ -168,6 +168,39 @@ export interface SuggestResponse {
   suggestions: RuleSuggestion[];
 }
 
+// --- Rules config (the editable rule set) -----------------------------------
+
+export interface GtinRules {
+  configured: boolean;
+  ai240_hyphen: "optional" | "required";
+  map: Record<string, string>; // REF -> 14-digit GTIN
+}
+
+export interface DescriptionRules {
+  configured: boolean;
+  match_mode: "exact" | "normalized" | "contains";
+  map: Record<string, string>; // REF -> canonical label description
+}
+
+export interface IfuRules {
+  configured: boolean;
+  required_on_label: boolean;
+}
+
+export interface StaticContentRules {
+  configured: boolean;
+  families: Record<string, unknown>;
+  ref_to_family: Record<string, string>;
+}
+
+export interface RulesConfig {
+  rules_version: string;
+  gtin: GtinRules;
+  descriptions: DescriptionRules;
+  ifu: IfuRules;
+  static_content: StaticContentRules;
+}
+
 // The upload form's six document slots.
 export const REQUIRED_DOCS = [
   "label_form",

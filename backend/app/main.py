@@ -21,7 +21,7 @@ from processor import capabilities                      # noqa: E402
 from processor.pipeline import process_submission        # noqa: E402
 
 from . import auth, bundle                                # noqa: E402
-from .config import rules, settings                       # noqa: E402
+from .config import rules, save_rules, settings           # noqa: E402
 from .store import get_store                              # noqa: E402
 from .version import CHANGELOG, VERSION                    # noqa: E402
 
@@ -225,6 +225,36 @@ def api_training_suggest(_: dict = Depends(auth.current_reviewer)):
     from . import assist
     corpus = get_store().disagreement_corpus()
     return assist.propose_rule_changes(corpus, rules())
+
+
+# --- rules editing ----------------------------------------------------------
+
+@app.get("/api/rules")
+def api_get_rules(_: dict = Depends(auth.current_reviewer)):
+    """The full active rule set, so the Rules screen can edit it (not just show the version)."""
+    return rules()
+
+
+class RulesUpdate(BaseModel):
+    reviewer_name: Optional[str] = None
+    rules: dict
+
+
+@app.put("/api/rules")
+def api_put_rules(req: RulesUpdate, _: dict = Depends(auth.current_reviewer)):
+    """Validate + persist an edited rule set. Flips the dependent checks (C-AI(01), D, E, F)
+    between DEFERRED and active. Returns the saved (normalized) rules."""
+    try:
+        saved = save_rules(req.rules)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    except OSError as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            f"could not write rules file ({type(e).__name__})")
+    get_store().append_audit("RULES_UPDATE",
+                             actor=(req.reviewer_name or "").strip() or None,
+                             detail={"rules_version": saved.get("rules_version")})
+    return saved
 
 
 @app.get("/api/submissions")

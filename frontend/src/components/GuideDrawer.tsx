@@ -70,9 +70,12 @@ export function GuideDrawer({
             automatically. (Requires an Anthropic API key on the server.)
           </Section>
           <Section title="6. Rules">
-            The <b>Rules</b> tab shows the canonical reference values the checks
-            compare against. When a check is DEFERRED for a missing value, this is
-            where it gets configured.
+            The <b>Rules</b> tab is where you configure the data-driven checks.
+            Each section (GTIN, description, IFU, static label content) has an
+            Active/Deferred toggle and fields for its reference values — turn one
+            on and a previously DEFERRED check starts running for real. Leave it
+            off and the reviewer keeps signing off on it manually. Every change is
+            recorded in the audit log.
           </Section>
         </div>
       </aside>

@@ -9,9 +9,21 @@ Notes are written in plain, user-facing language — they are what shows in the
 repo root.
 """
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 CHANGELOG: list[dict] = [
+    {
+        "version": "1.5.0",
+        "date": "2026-06-25",
+        "notes": [
+            "The Rules screen is now editable: turn each data-driven check (GTIN, "
+            "description, IFU, static label content) on or off and enter its values "
+            "right in the app — no more hand-editing config files",
+            "Activating a check makes it run for real; while a check is left off it "
+            "stays 'Deferred' and the reviewer signs off on it manually, exactly as "
+            "before. Every rule change is recorded in the audit log",
+        ],
+    },
     {
         "version": "1.4.0",
         "date": "2026-06-25",

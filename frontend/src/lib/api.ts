@@ -6,6 +6,7 @@ import type {
   FeedbackRequest,
   HealthResponse,
   LoginResponse,
+  RulesConfig,
   SignRequest,
   SignResponse,
   SubmissionError,
@@ -247,6 +248,24 @@ export function submitFeedback(
 // Never applies anything — returns suggestions for a human to apply.
 export function suggestRuleChanges(): Promise<SuggestResponse> {
   return request<SuggestResponse>("/api/training/suggest", { method: "POST" });
+}
+
+// --- Rules config -----------------------------------------------------------
+
+export function getRules(): Promise<RulesConfig> {
+  return request<RulesConfig>("/api/rules");
+}
+
+// Validates server-side; rejects with ApiError(400, <joined messages>) on bad input.
+export function saveRules(
+  rules: RulesConfig,
+  reviewerName?: string,
+): Promise<RulesConfig> {
+  return request<RulesConfig>("/api/rules", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rules, reviewer_name: reviewerName }),
+  });
 }
 
 // --- Health -----------------------------------------------------------------
