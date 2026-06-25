@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  processor-tests:
+    name: Processor tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # The unit + integration tiers need only PyMuPDF + PyYAML (no system OCR/barcode libs);
+      # capability detection degrades gracefully and the bundled sample drives the headline test.
+      - run: pip install pymupdf==1.27.2.3 pyyaml==6.0.1 pytest==9.1.1
+      - name: Run unit + integration tests
+        run: PYTHONPATH=. pytest tests/unit tests/integration -v
+
+  frontend-build:
+    name: Frontend build + typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

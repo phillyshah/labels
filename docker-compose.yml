@@ -1,0 +1,35 @@
+# Maxx Label Approval — production compose, Traefik-fronted (usage-repo style).
+#
+# DEPLOYED at https://labelcheck.90ten.life on the Hostinger VPS (72.62.174.193).
+# Shared Traefik network is `proxy`; entrypoint `websecure`; certresolver `letsencrypt`.
+#
+# IMPORTANT: the traefik.* labels below are INERT on this VPS — Traefik's Docker provider
+# is broken there (Docker API too new for Traefik's client), so routing is done by the
+# static file deploy/traefik-labelcheck.yml installed at /opt/traefik/dynamic/labelcheck.yml.
+# The labels are kept for portability to a host where the Docker provider works.
+
+services:
+  labelcheck:
+    build: .
+    image: maxx-labelcheck:latest
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - proxy
+    expose:
+      - "8000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.labelcheck.rule=Host(`labelcheck.90ten.life`)"
+      - "traefik.http.routers.labelcheck.entrypoints=websecure"
+      - "traefik.http.routers.labelcheck.tls.certresolver=letsencrypt"
+      - "traefik.http.services.labelcheck.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  proxy:
+    external: true   # the network already created by the existing Traefik stack on the VPS

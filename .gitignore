@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+*.local
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Local data / uploads (dev fallback store)
+backend/.localdata/

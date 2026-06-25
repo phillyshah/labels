@@ -1,0 +1,64 @@
+# rules.example.yaml
+# ---------------------------------------------------------------------------
+# The configurable rule set that drives Checks D, E, F and the GTIN part of C.
+# Copy to rules.yaml and fill in once MXO-PP00001 and MXO-PP00006 are supplied.
+# While sections are marked `configured: false`, the dependent checks return
+# DEFERRED (never FAIL). The processor records `rules_version` on every run.
+# ---------------------------------------------------------------------------
+
+rules_version: "2026-06-01.unconfigured"
+
+# --- Check C: GTIN + AI(240) policy (source: MXO-PP00006) -------------------
+gtin:
+  configured: false          # set true when MXO-PP00006 is loaded
+  ai240_hyphen: optional     # 'optional' -> PASS if only difference is the hyphen
+                             # 'required' -> FLAG/FAIL if encoded value drops hyphen
+  # ref -> GTIN-14 map (fill from MXO-PP00006)
+  map: {}
+  # example once configured:
+  # map:
+  #   MTUUX400-K: "10881176701838"
+
+# --- Check D: canonical label description (source: MXO-PP00001) -------------
+descriptions:
+  configured: false
+  match_mode: normalized     # exact | normalized | contains  (confirm with Maxx, Q#8)
+  # ref -> canonical label description
+  map: {}
+  # example:
+  # map:
+  #   MTUUX400-K: "TIBIAL BASE PLATE / SIZE 4"
+
+# --- Check E: IFU print requirements (source: MXO-PP00001 + sterile CoC) ----
+ifu:
+  configured: false
+  required_on_label: true    # whether the IFU ref must be printed on the label zone
+  # product-family / ref -> expected IFU is taken from the sterile CoC at runtime;
+  # this section only governs whether/where it must appear on the label.
+
+# --- Check F: static / template content per product family (MXO-PP00001) ----
+static_content:
+  configured: false
+  families:
+    # FREEDOM_TKS:
+    #   ce_notified_body: "2460"
+    #   manufacturer:
+    #     name: "Maxx Orthopedics"
+    #     address: "2460 General Armistead Ave, Suite 100, Norristown, PA 19403, U.S.A."
+    #   ec_rep:
+    #     name: "AIWO Technology Consulting GmbH"
+    #     address: "Breite Straße 3, 40213 Düsseldorf, Germany"
+    #   required_symbols: [single_use, do_not_use_if_damaged, keep_dry, keep_out_of_sunlight,
+    #                       manufacturer, use_by, lot, ref, sterile_eo, consult_ifu, ce]
+    #   label_revision: "Rev.03"
+    {}
+  # REF -> product-family resolver (prefix rules etc.); fill from MXO-PP00001
+  ref_to_family: {}
+
+# --- Always-on data checks (no external rules needed) -----------------------
+# These run regardless of the above and are documented here for completeness:
+#   - Check A (completeness/linkage/signatures)
+#   - Check B (cross-document field consistency)
+#   - Check C AIs (10)(11)(17) and (240) shape
+#   - Check F manufacturer-address-vs-batch-CoC sub-check
+#   - Check G (workflow integrity flags)
