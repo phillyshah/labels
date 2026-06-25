@@ -23,8 +23,9 @@ from processor.pipeline import process_submission        # noqa: E402
 from . import auth, bundle                                # noqa: E402
 from .config import rules, settings                       # noqa: E402
 from .store import get_store                              # noqa: E402
+from .version import CHANGELOG, VERSION                    # noqa: E402
 
-app = FastAPI(title="Maxx Label Approval", version="1.0.0")
+app = FastAPI(title="Maxx Label Approval", version=VERSION)
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,6 +35,15 @@ app.add_middleware(
 
 REQUIRED_DOCS = ("label_form", "batch_coc", "sterile_coc", "sterile_lot_record")
 OPTIONAL_DOCS = ("doc_release_verification", "sterile_product_release_verification")
+
+
+# --- version / changelog -----------------------------------------------------
+
+@app.get("/version")
+def version():
+    """Current app version + full changelog. Powers the header 'What's New'
+    panel and the footer version badge. Unauthenticated (no sensitive data)."""
+    return {"version": VERSION, "changelog": CHANGELOG}
 
 
 # --- health -----------------------------------------------------------------

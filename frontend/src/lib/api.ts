@@ -13,6 +13,7 @@ import type {
   SubmissionResult,
   SuggestResponse,
   TrainingMetrics,
+  VersionInfo,
 } from "./types";
 
 const TOKEN_KEY = "label_approval_token";
@@ -255,4 +256,12 @@ export async function health(): Promise<HealthResponse> {
   const res = await fetch("/healthz");
   const body = (await parseJson(res)) as HealthResponse;
   return body;
+}
+
+// --- Version / changelog ----------------------------------------------------
+
+export async function getVersion(): Promise<VersionInfo> {
+  // /version is unauthenticated; powers the header "What's New" + footer badge.
+  const res = await fetch("/version");
+  return (await parseJson(res)) as VersionInfo;
 }

@@ -113,6 +113,17 @@ export interface HealthResponse {
   rules_version: string;
 }
 
+export interface ChangelogEntry {
+  version: string;
+  date: string;
+  notes: string[];
+}
+
+export interface VersionInfo {
+  version: string;
+  changelog: ChangelogEntry[];
+}
+
 // --- Training / feedback ----------------------------------------------------
 
 export type Rating = "correct" | "partial" | "wrong";

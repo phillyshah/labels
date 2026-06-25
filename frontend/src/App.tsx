@@ -3,9 +3,11 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import {
   clearSession,
   getToken,
+  getVersion,
   setSession,
   setUnauthorizedHandler,
 } from "./lib/api";
+import type { VersionInfo } from "./lib/types";
 import { Login } from "./screens/Login";
 import { Header } from "./components/Header";
 import { NewReview } from "./screens/NewReview";
@@ -17,6 +19,13 @@ import { Training } from "./screens/Training";
 export default function App() {
   const navigate = useNavigate();
   const [token, setToken] = useState<string | null>(() => getToken());
+  const [version, setVersion] = useState<VersionInfo | null>(null);
+
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => setVersion(null));
+  }, []);
 
   // Any 401 from the API client clears the session and drops us to Login.
   useEffect(() => {
@@ -46,9 +55,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen">
-      <Header onLogout={handleLogout} />
-      <main>
+    <div className="flex min-h-screen flex-col">
+      <Header onLogout={handleLogout} version={version} />
+      <main className="flex-1">
         <Routes>
           <Route path="/" element={<Navigate to="/new" replace />} />
           <Route path="/new" element={<NewReview />} />
@@ -59,6 +68,9 @@ export default function App() {
           <Route path="*" element={<Navigate to="/new" replace />} />
         </Routes>
       </main>
+      <footer className="border-t border-gray-200 py-3 text-center text-xs text-gray-400">
+        Label Approval{version ? ` · v${version.version}` : ""}
+      </footer>
     </div>
   );
 }

@@ -1,6 +1,9 @@
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { health } from "../lib/api";
+import type { VersionInfo } from "../lib/types";
+import { WhatsNew } from "./WhatsNew";
+import { GuideDrawer } from "./GuideDrawer";
 
 function navClass({ isActive }: { isActive: boolean }): string {
   return [
@@ -11,9 +14,17 @@ function navClass({ isActive }: { isActive: boolean }): string {
   ].join(" ");
 }
 
-export function Header({ onLogout }: { onLogout: () => void }) {
+export function Header({
+  onLogout,
+  version,
+}: {
+  onLogout: () => void;
+  version: VersionInfo | null;
+}) {
   const [status, setStatus] = useState<string | null>(null);
   const [rulesVersion, setRulesVersion] = useState<string | null>(null);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -55,6 +66,20 @@ export function Header({ onLogout }: { onLogout: () => void }) {
           </NavLink>
         </nav>
         <div className="ml-auto flex items-center gap-3">
+          <button
+            onClick={() => setWhatsNewOpen(true)}
+            className="rounded px-2 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100"
+          >
+            What's New{version ? ` · v${version.version}` : ""}
+          </button>
+          <button
+            onClick={() => setGuideOpen(true)}
+            aria-label="User guide"
+            title="User guide"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-300 text-sm font-bold text-gray-600 hover:bg-gray-100"
+          >
+            ?
+          </button>
           <span
             className="flex items-center gap-1.5 text-xs text-gray-600"
             title={`backend status: ${status ?? "checking"}${
@@ -72,6 +97,12 @@ export function Header({ onLogout }: { onLogout: () => void }) {
           </button>
         </div>
       </div>
+      <WhatsNew
+        open={whatsNewOpen}
+        onClose={() => setWhatsNewOpen(false)}
+        info={version}
+      />
+      <GuideDrawer open={guideOpen} onClose={() => setGuideOpen(false)} />
     </header>
   );
 }

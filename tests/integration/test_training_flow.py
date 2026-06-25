@@ -74,6 +74,18 @@ def test_training_upload_feedback_and_metrics(client):
 
 
 @pytest.mark.integration
+def test_version_endpoint(client):
+    from backend.app.version import VERSION
+    res = client.get("/version")  # unauthenticated
+    assert res.status_code == 200
+    body = res.json()
+    assert body["version"] == VERSION
+    assert body["changelog"] and body["changelog"][0]["version"] == VERSION
+    for entry in body["changelog"]:
+        assert entry["version"] and entry["date"] and entry["notes"]
+
+
+@pytest.mark.integration
 def test_invalid_rating_rejected(client):
     h = _auth(client)
     sid = client.post("/api/training/submissions", headers=h,
