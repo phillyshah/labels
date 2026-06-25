@@ -298,6 +298,19 @@ def api_bundle(submission_id: str, _: dict = Depends(auth.current_reviewer)):
 
 # --- static SPA hosting (built frontend) ------------------------------------
 # In production the Vite build is copied to backend/static and served here behind Traefik.
+class SPAStaticFiles(StaticFiles):
+    """Serve the SPA but force index.html to always revalidate, so a new deploy's
+    content-hashed JS/CSS is picked up without a manual hard refresh. The hashed
+    asset files keep their normal (cacheable) headers since their names change
+    every build."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return response
+
+
 _static_dir = Path(__file__).resolve().parents[1] / "static"
 if _static_dir.exists():
-    app.mount("/", StaticFiles(directory=str(_static_dir), html=True), name="spa")
+    app.mount("/", SPAStaticFiles(directory=str(_static_dir), html=True), name="spa")
